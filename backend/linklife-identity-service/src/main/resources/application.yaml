@@ -1,0 +1,56 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: linklife-identity-service
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        register-enabled: true
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${IDENTITY_DB_URL:jdbc:mysql://127.0.0.1:3306/linklife_identity?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=UTF-8}
+    username: ${IDENTITY_DB_USERNAME:linklife_identity}
+    password: ${IDENTITY_DB_PASSWORD:}
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      username: ${REDIS_USERNAME:}
+      password: ${REDIS_PASSWORD:}
+      database: 0
+      timeout: ${REDIS_TIMEOUT:3s}
+      lettuce:
+        pool:
+          max-active: 10
+          max-idle: 10
+          min-idle: 1
+          time-between-eviction-runs: 10s
+  jackson:
+    default-property-inclusion: non_null
+
+mybatis-plus:
+  type-aliases-package: com.linklife.identity.entity
+
+logging:
+  level:
+    com.linklife: info
+  pattern:
+    dateformat: mm:ss.SSS
+
+linklife:
+  runtime:
+    production-validation-enabled: ${LINKLIFE_PRODUCTION_VALIDATION_ENABLED:true}
+    console-verification-code-enabled: ${LINKLIFE_CONSOLE_VERIFICATION_CODE_ENABLED:false}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

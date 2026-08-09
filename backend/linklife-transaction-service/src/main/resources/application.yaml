@@ -1,0 +1,75 @@
+server:
+  port: 8083
+
+spring:
+  application:
+    name: linklife-transaction-service
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        register-enabled: true
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${TRANSACTION_DB_URL:jdbc:mysql://127.0.0.1:3306/linklife_transaction?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=UTF-8}
+    username: ${TRANSACTION_DB_USERNAME:linklife_transaction}
+    password: ${TRANSACTION_DB_PASSWORD:}
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      username: ${REDIS_USERNAME:}
+      password: ${REDIS_PASSWORD:}
+      database: 0
+      timeout: ${REDIS_TIMEOUT:3s}
+      lettuce:
+        pool:
+          max-active: 10
+          max-idle: 10
+          min-idle: 1
+          time-between-eviction-runs: 10s
+  jackson:
+    default-property-inclusion: non_null
+
+mybatis-plus:
+  type-aliases-package: com.linklife.promotion.entity,com.linklife.trade.entity
+
+logging:
+  level:
+    com.linklife: info
+  pattern:
+    dateformat: mm:ss.SSS
+
+linklife:
+  runtime:
+    production-validation-enabled: ${LINKLIFE_PRODUCTION_VALIDATION_ENABLED:true}
+  security:
+    admin-user-ids: ${LINKLIFE_ADMIN_USER_IDS:}
+  trade:
+    order-timeout:
+      enabled: ${LINKLIFE_ORDER_TIMEOUT_ENABLED:false}
+      unpaid-timeout-minutes: ${LINKLIFE_ORDER_TIMEOUT_MINUTES:15}
+      scan-delay-ms: ${LINKLIFE_ORDER_TIMEOUT_SCAN_DELAY_MS:60000}
+      initial-delay-ms: ${LINKLIFE_ORDER_TIMEOUT_INITIAL_DELAY_MS:30000}
+      batch-size: ${LINKLIFE_ORDER_TIMEOUT_BATCH_SIZE:100}
+      max-batches-per-run: ${LINKLIFE_ORDER_TIMEOUT_MAX_BATCHES:10}
+    outbox:
+      enabled: ${LINKLIFE_OUTBOX_ENABLED:false}
+      scan-delay-ms: ${LINKLIFE_OUTBOX_SCAN_DELAY_MS:5000}
+      initial-delay-ms: ${LINKLIFE_OUTBOX_INITIAL_DELAY_MS:30000}
+      batch-size: ${LINKLIFE_OUTBOX_BATCH_SIZE:50}
+      max-batches-per-run: ${LINKLIFE_OUTBOX_MAX_BATCHES:10}
+      lease-seconds: ${LINKLIFE_OUTBOX_LEASE_SECONDS:60}
+      max-retries: ${LINKLIFE_OUTBOX_MAX_RETRIES:5}
+      retry-base-delay-ms: ${LINKLIFE_OUTBOX_RETRY_BASE_DELAY_MS:1000}
+      retry-max-delay-ms: ${LINKLIFE_OUTBOX_RETRY_MAX_DELAY_MS:60000}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

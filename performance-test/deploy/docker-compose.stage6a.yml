@@ -1,0 +1,273 @@
+name: linklife-stage6a
+
+# Stage 6A benchmark profile: same 8-container topology as Stage 4/5 final
+# microservice architecture, but with a private project name/volumes/network so
+# no Stage4/Stage5 named volumes or containers are touched.
+# Business services are only reachable through the gateway (127.0.0.1:8080).
+# All passwords come from the private gitignored env file; none are stored here.
+services:
+  mysql:
+    image: mysql:8.4.4
+    container_name: linklife-stage6a-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?required}
+      LINKLIFE_IDENTITY_DB_PASSWORD: ${MYSQL_IDENTITY_PASSWORD:?required}
+      LINKLIFE_MERCHANT_DB_PASSWORD: ${MYSQL_MERCHANT_PASSWORD:?required}
+      LINKLIFE_TRANSACTION_DB_PASSWORD: ${MYSQL_TRANSACTION_PASSWORD:?required}
+      LINKLIFE_SOCIAL_DB_PASSWORD: ${MYSQL_SOCIAL_PASSWORD:?required}
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_general_ci
+      - --default-time-zone=+08:00
+    ports:
+      - "127.0.0.1:13306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ../../backend/deploy/mysql/init/00-create-databases-and-users.sh:/docker-entrypoint-initdb.d/00-create-databases-and-users.sh:ro
+      - ../../backend/linklife-identity-service/src/main/resources/db/schema.sql:/opt/schemas/linklife_identity.sql:ro
+      - ../../backend/linklife-merchant-service/src/main/resources/db/schema.sql:/opt/schemas/linklife_merchant.sql:ro
+      - ../../backend/linklife-transaction-service/src/main/resources/db/schema.sql:/opt/schemas/linklife_transaction.sql:ro
+      - ../../backend/linklife-social-service/src/main/resources/db/schema.sql:/opt/schemas/linklife_social.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$${MYSQL_ROOT_PASSWORD}\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+    networks:
+      - linklife-stage6a-net
+    restart: on-failure
+
+  redis:
+    image: redis:7-alpine
+    container_name: linklife-stage6a-redis
+    command: ["sh", "/start-redis-with-acl.sh"]
+    environment:
+      REDIS_ADMIN_PASSWORD: ${REDIS_ADMIN_PASSWORD:?required}
+      REDIS_IDENTITY_PASSWORD: ${REDIS_IDENTITY_PASSWORD:?required}
+      REDIS_MERCHANT_PASSWORD: ${REDIS_MERCHANT_PASSWORD:?required}
+      REDIS_TRANSACTION_PASSWORD: ${REDIS_TRANSACTION_PASSWORD:?required}
+      REDIS_SOCIAL_PASSWORD: ${REDIS_SOCIAL_PASSWORD:?required}
+      REDIS_GATEWAY_PASSWORD: ${REDIS_GATEWAY_PASSWORD:?required}
+    ports:
+      - "127.0.0.1:16379:6379"
+    volumes:
+      - redis_data:/data
+      - ../../backend/deploy/redis/start-redis-with-acl.sh:/start-redis-with-acl.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$${REDIS_ADMIN_PASSWORD}\" redis-cli --no-auth-warning ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+    networks:
+      - linklife-stage6a-net
+    restart: on-failure
+
+  nacos:
+    image: nacos/nacos-server:v3.0.3
+    container_name: linklife-stage6a-nacos
+    environment:
+      MODE: standalone
+      NACOS_AUTH_ENABLE: "false"
+      NACOS_AUTH_TOKEN: ${NACOS_AUTH_TOKEN:?required}
+      NACOS_AUTH_IDENTITY_KEY: ${NACOS_AUTH_IDENTITY_KEY:?required}
+      NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE:?required}
+      JVM_XMS: 256m
+      JVM_XMX: 512m
+      JVM_XMN: 128m
+    ports:
+      - "127.0.0.1:18848:8848"
+      - "127.0.0.1:19848:9848"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS 'http://127.0.0.1:8848/nacos/v1/ns/service/list?pageNo=1&pageSize=5' >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    networks:
+      - linklife-stage6a-net
+    restart: on-failure
+
+  identity-service:
+    build:
+      context: ../../backend
+      dockerfile: deploy/docker/Dockerfile.service
+      args:
+        JAR_FILE: linklife-identity-service/target/linklife-identity-service-0.0.1-SNAPSHOT.jar
+    image: linklife-stage6a-identity
+    container_name: linklife-stage6a-identity
+    environment:
+      NACOS_ADDR: nacos:8848
+      IDENTITY_DB_URL: "jdbc:mysql://mysql:3306/linklife_identity?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=UTF-8"
+      IDENTITY_DB_USERNAME: linklife_identity_user
+      IDENTITY_DB_PASSWORD: ${MYSQL_IDENTITY_PASSWORD:?required}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_USERNAME: linklife_identity
+      REDIS_PASSWORD: ${REDIS_IDENTITY_PASSWORD:?required}
+      REDIS_TIMEOUT: 3s
+      LINKLIFE_PRODUCTION_VALIDATION_ENABLED: "true"
+      LINKLIFE_CONSOLE_VERIFICATION_CODE_ENABLED: "true"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nacos:
+        condition: service_healthy
+    networks:
+      - linklife-stage6a-net
+    restart: on-failure
+
+  merchant-service:
+    build:
+      context: ../../backend
+      dockerfile: deploy/docker/Dockerfile.service
+      args:
+        JAR_FILE: linklife-merchant-service/target/linklife-merchant-service-0.0.1-SNAPSHOT.jar
+    image: linklife-stage6a-merchant
+    container_name: linklife-stage6a-merchant
+    environment:
+      NACOS_ADDR: nacos:8848
+      MERCHANT_DB_URL: "jdbc:mysql://mysql:3306/linklife_merchant?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=UTF-8"
+      MERCHANT_DB_USERNAME: linklife_merchant_user
+      MERCHANT_DB_PASSWORD: ${MYSQL_MERCHANT_PASSWORD:?required}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_USERNAME: linklife_merchant
+      REDIS_PASSWORD: ${REDIS_MERCHANT_PASSWORD:?required}
+      REDIS_TIMEOUT: 3s
+      LINKLIFE_PRODUCTION_VALIDATION_ENABLED: "true"
+      LINKLIFE_UPLOAD_ROOT: /var/lib/linklife/uploads
+      LINKLIFE_UPLOAD_RESOURCE_PREFIX: /files/
+      LINKLIFE_UPLOAD_PUBLIC_PREFIX: /api/files/
+      LINKLIFE_UPLOAD_MAX_SIZE_BYTES: "5242880"
+      LINKLIFE_ADMIN_USER_IDS: ${LINKLIFE_ADMIN_USER_IDS:?required}
+      LINKLIFE_LOCAL_CACHE_ENABLED: ${LINKLIFE_LOCAL_CACHE_ENABLED:-true}
+      LINKLIFE_LOCAL_CACHE_SHOP_MAXIMUM_SIZE: ${LINKLIFE_LOCAL_CACHE_SHOP_MAXIMUM_SIZE:-10000}
+      LINKLIFE_LOCAL_CACHE_SHOP_TTL_SECONDS: ${LINKLIFE_LOCAL_CACHE_SHOP_TTL_SECONDS:-10}
+      LINKLIFE_LOCAL_CACHE_SHOP_TYPE_MAXIMUM_SIZE: ${LINKLIFE_LOCAL_CACHE_SHOP_TYPE_MAXIMUM_SIZE:-16}
+      LINKLIFE_LOCAL_CACHE_SHOP_TYPE_TTL_SECONDS: ${LINKLIFE_LOCAL_CACHE_SHOP_TYPE_TTL_SECONDS:-60}
+    volumes:
+      - merchant_uploads:/var/lib/linklife/uploads
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nacos:
+        condition: service_healthy
+    networks:
+      - linklife-stage6a-net
+    restart: on-failure
+
+  transaction-service:
+    build:
+      context: ../../backend
+      dockerfile: deploy/docker/Dockerfile.service
+      args:
+        JAR_FILE: linklife-transaction-service/target/linklife-transaction-service-0.0.1-SNAPSHOT.jar
+    image: linklife-stage6a-transaction
+    container_name: linklife-stage6a-transaction
+    environment:
+      NACOS_ADDR: nacos:8848
+      TRANSACTION_DB_URL: "jdbc:mysql://mysql:3306/linklife_transaction?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=UTF-8"
+      TRANSACTION_DB_USERNAME: linklife_transaction_user
+      TRANSACTION_DB_PASSWORD: ${MYSQL_TRANSACTION_PASSWORD:?required}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_USERNAME: linklife_transaction
+      REDIS_PASSWORD: ${REDIS_TRANSACTION_PASSWORD:?required}
+      REDIS_TIMEOUT: 3s
+      LINKLIFE_PRODUCTION_VALIDATION_ENABLED: "true"
+      LINKLIFE_ADMIN_USER_IDS: ${LINKLIFE_ADMIN_USER_IDS:?required}
+      LINKLIFE_ORDER_TIMEOUT_ENABLED: "true"
+      LINKLIFE_OUTBOX_ENABLED: "true"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nacos:
+        condition: service_healthy
+    networks:
+      - linklife-stage6a-net
+    restart: on-failure
+
+  social-service:
+    build:
+      context: ../../backend
+      dockerfile: deploy/docker/Dockerfile.service
+      args:
+        JAR_FILE: linklife-social-service/target/linklife-social-service-0.0.1-SNAPSHOT.jar
+    image: linklife-stage6a-social
+    container_name: linklife-stage6a-social
+    environment:
+      NACOS_ADDR: nacos:8848
+      SOCIAL_DB_URL: "jdbc:mysql://mysql:3306/linklife_social?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=UTF-8"
+      SOCIAL_DB_USERNAME: linklife_social_user
+      SOCIAL_DB_PASSWORD: ${MYSQL_SOCIAL_PASSWORD:?required}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_USERNAME: linklife_social
+      REDIS_PASSWORD: ${REDIS_SOCIAL_PASSWORD:?required}
+      REDIS_TIMEOUT: 3s
+      LINKLIFE_PRODUCTION_VALIDATION_ENABLED: "true"
+      LINKLIFE_SENTINEL_IDENTITY_ENABLED: ${LINKLIFE_SENTINEL_IDENTITY_ENABLED:-true}
+      LINKLIFE_SENTINEL_IDENTITY_EXCEPTION_RATIO: ${LINKLIFE_SENTINEL_IDENTITY_EXCEPTION_RATIO:-0.5}
+      LINKLIFE_SENTINEL_IDENTITY_MIN_REQUEST_AMOUNT: ${LINKLIFE_SENTINEL_IDENTITY_MIN_REQUEST_AMOUNT:-5}
+      LINKLIFE_SENTINEL_IDENTITY_STAT_INTERVAL_MS: ${LINKLIFE_SENTINEL_IDENTITY_STAT_INTERVAL_MS:-10000}
+      LINKLIFE_SENTINEL_IDENTITY_TIME_WINDOW_SECONDS: ${LINKLIFE_SENTINEL_IDENTITY_TIME_WINDOW_SECONDS:-5}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nacos:
+        condition: service_healthy
+    networks:
+      - linklife-stage6a-net
+    restart: on-failure
+
+  gateway:
+    build:
+      context: ../../backend
+      dockerfile: deploy/docker/Dockerfile.service
+      args:
+        JAR_FILE: linklife-gateway/target/linklife-gateway-0.0.1-SNAPSHOT.jar
+    image: linklife-stage6a-gateway
+    container_name: linklife-stage6a-gateway
+    environment:
+      NACOS_ADDR: nacos:8848
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_USERNAME: linklife_gateway
+      REDIS_PASSWORD: ${REDIS_GATEWAY_PASSWORD:?required}
+      REDIS_TIMEOUT: 3s
+      LINKLIFE_SENTINEL_GATEWAY_ENABLED: ${LINKLIFE_SENTINEL_GATEWAY_ENABLED:-true}
+      LINKLIFE_SENTINEL_HOT_BLOG_QPS: ${LINKLIFE_SENTINEL_HOT_BLOG_QPS:-100}
+      LINKLIFE_SENTINEL_SHOP_OF_TYPE_QPS: ${LINKLIFE_SENTINEL_SHOP_OF_TYPE_QPS:-100}
+      LINKLIFE_SENTINEL_SECKILL_QPS: ${LINKLIFE_SENTINEL_SECKILL_QPS:-50}
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nacos:
+        condition: service_healthy
+    networks:
+      - linklife-stage6a-net
+    restart: on-failure
+
+networks:
+  linklife-stage6a-net:
+    name: linklife-stage6a-net
+
+volumes:
+  mysql_data:
+    name: linklife-stage6a_mysql_data
+  merchant_uploads:
+    name: linklife-stage6a_merchant_uploads
+  redis_data:
+    name: linklife-stage6a_redis_data

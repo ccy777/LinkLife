@@ -1,0 +1,68 @@
+server:
+  port: 8084
+
+spring:
+  application:
+    name: linklife-social-service
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        register-enabled: true
+    openfeign:
+      client:
+        config:
+          linklife-identity-service:
+            connect-timeout: 1000
+            read-timeout: 3000
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${SOCIAL_DB_URL:jdbc:mysql://127.0.0.1:3306/linklife_social?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=UTF-8}
+    username: ${SOCIAL_DB_USERNAME:linklife_social}
+    password: ${SOCIAL_DB_PASSWORD:}
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      username: ${REDIS_USERNAME:}
+      password: ${REDIS_PASSWORD:}
+      database: 0
+      timeout: ${REDIS_TIMEOUT:3s}
+      lettuce:
+        pool:
+          max-active: 10
+          max-idle: 10
+          min-idle: 1
+          time-between-eviction-runs: 10s
+  jackson:
+    default-property-inclusion: non_null
+
+mybatis-plus:
+  type-aliases-package: com.linklife.social.entity
+
+logging:
+  level:
+    com.linklife: info
+  pattern:
+    dateformat: mm:ss.SSS
+
+linklife:
+  runtime:
+    production-validation-enabled: ${LINKLIFE_PRODUCTION_VALIDATION_ENABLED:true}
+  sentinel:
+    identity:
+      enabled: ${LINKLIFE_SENTINEL_IDENTITY_ENABLED:true}
+      exception-ratio: ${LINKLIFE_SENTINEL_IDENTITY_EXCEPTION_RATIO:0.5}
+      minimum-request-amount: ${LINKLIFE_SENTINEL_IDENTITY_MIN_REQUEST_AMOUNT:5}
+      stat-interval-ms: ${LINKLIFE_SENTINEL_IDENTITY_STAT_INTERVAL_MS:10000}
+      time-window-seconds: ${LINKLIFE_SENTINEL_IDENTITY_TIME_WINDOW_SECONDS:5}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

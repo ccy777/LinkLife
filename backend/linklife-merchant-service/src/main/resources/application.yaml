@@ -1,0 +1,69 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: linklife-merchant-service
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        register-enabled: true
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${MERCHANT_DB_URL:jdbc:mysql://127.0.0.1:3306/linklife_merchant?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=UTF-8}
+    username: ${MERCHANT_DB_USERNAME:linklife_merchant}
+    password: ${MERCHANT_DB_PASSWORD:}
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      username: ${REDIS_USERNAME:}
+      password: ${REDIS_PASSWORD:}
+      database: 0
+      timeout: ${REDIS_TIMEOUT:3s}
+      lettuce:
+        pool:
+          max-active: 10
+          max-idle: 10
+          min-idle: 1
+          time-between-eviction-runs: 10s
+  jackson:
+    default-property-inclusion: non_null
+
+mybatis-plus:
+  type-aliases-package: com.linklife.merchant.entity
+
+logging:
+  level:
+    com.linklife: info
+  pattern:
+    dateformat: mm:ss.SSS
+
+linklife:
+  runtime:
+    production-validation-enabled: ${LINKLIFE_PRODUCTION_VALIDATION_ENABLED:true}
+  cache:
+    local:
+      enabled: ${LINKLIFE_LOCAL_CACHE_ENABLED:true}
+      shop-maximum-size: ${LINKLIFE_LOCAL_CACHE_SHOP_MAXIMUM_SIZE:10000}
+      shop-ttl-seconds: ${LINKLIFE_LOCAL_CACHE_SHOP_TTL_SECONDS:10}
+      shop-type-maximum-size: ${LINKLIFE_LOCAL_CACHE_SHOP_TYPE_MAXIMUM_SIZE:16}
+      shop-type-ttl-seconds: ${LINKLIFE_LOCAL_CACHE_SHOP_TYPE_TTL_SECONDS:60}
+  security:
+    admin-user-ids: ${LINKLIFE_ADMIN_USER_IDS:}
+  upload:
+    root: ${LINKLIFE_UPLOAD_ROOT:./data/uploads}
+    resource-prefix: ${LINKLIFE_UPLOAD_RESOURCE_PREFIX:/files/}
+    public-prefix: ${LINKLIFE_UPLOAD_PUBLIC_PREFIX:/api/files/}
+    max-size-bytes: ${LINKLIFE_UPLOAD_MAX_SIZE_BYTES:5242880}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

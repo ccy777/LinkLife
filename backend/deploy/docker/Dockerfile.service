@@ -1,0 +1,24 @@
+# 018F generic Spring Boot service image.
+# Build happens in Maven outside the image; this image only carries the built jar.
+# Usage:
+#   docker build -f backend/deploy/docker/Dockerfile.service \
+#     --build-arg JAR_FILE=linklife-xxx-service/target/linklife-xxx-service-0.0.1-SNAPSHOT.jar \
+#     -t linklife-stage4-xxx .
+FROM eclipse-temurin:17-jre
+
+ARG JAR_FILE
+
+# Fixed non-privileged runtime user (not root); no source / Maven cache / secrets are copied.
+RUN groupadd --gid 10001 linklife \
+    && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin linklife \
+    && mkdir -p /var/lib/linklife/uploads \
+    && chown -R linklife:linklife /var/lib/linklife
+
+COPY --chown=linklife:linklife ${JAR_FILE} /app/app.jar
+
+USER linklife
+WORKDIR /app
+
+EXPOSE 8080
+
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]

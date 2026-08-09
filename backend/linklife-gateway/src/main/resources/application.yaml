@@ -1,0 +1,97 @@
+spring:
+  application:
+    name: linklife-gateway
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      username: ${REDIS_USERNAME:}
+      password: ${REDIS_PASSWORD:}
+      database: 0
+      timeout: ${REDIS_TIMEOUT:3s}
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        register-enabled: false
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: identity-user
+              uri: lb://linklife-identity-service
+              predicates:
+                - Path=/api/user/**
+              filters:
+                - StripPrefix=1
+            - id: merchant-shop
+              uri: lb://linklife-merchant-service
+              predicates:
+                - Path=/api/shop/**
+              filters:
+                - StripPrefix=1
+            - id: merchant-shop-type
+              uri: lb://linklife-merchant-service
+              predicates:
+                - Path=/api/shop-type/**
+              filters:
+                - StripPrefix=1
+            - id: merchant-upload
+              uri: lb://linklife-merchant-service
+              predicates:
+                - Path=/api/upload/**
+              filters:
+                - StripPrefix=1
+            - id: merchant-files
+              uri: lb://linklife-merchant-service
+              predicates:
+                - Path=/api/files/**
+              filters:
+                - StripPrefix=1
+            - id: transaction-voucher
+              uri: lb://linklife-transaction-service
+              predicates:
+                - Path=/api/voucher/**
+              filters:
+                - StripPrefix=1
+            - id: transaction-voucher-order
+              uri: lb://linklife-transaction-service
+              predicates:
+                - Path=/api/voucher-order/**
+              filters:
+                - StripPrefix=1
+            - id: social-blog
+              uri: lb://linklife-social-service
+              predicates:
+                - Path=/api/blog/**
+              filters:
+                - StripPrefix=1
+            - id: social-follow
+              uri: lb://linklife-social-service
+              predicates:
+                - Path=/api/follow/**
+              filters:
+                - StripPrefix=1
+            - id: social-blog-comments
+              uri: lb://linklife-social-service
+              predicates:
+                - Path=/api/blog-comments/**
+              filters:
+                - StripPrefix=1
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+linklife:
+  sentinel:
+    gateway:
+      enabled: ${LINKLIFE_SENTINEL_GATEWAY_ENABLED:true}
+      hot-blog-qps: ${LINKLIFE_SENTINEL_HOT_BLOG_QPS:100}
+      shop-of-type-qps: ${LINKLIFE_SENTINEL_SHOP_OF_TYPE_QPS:100}
+      seckill-qps: ${LINKLIFE_SENTINEL_SECKILL_QPS:50}

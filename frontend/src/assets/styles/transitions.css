@@ -1,0 +1,18 @@
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.18s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.rise-enter-active {
+  transition: opacity 0.28s ease, transform 0.28s ease;
+}
+
+.rise-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}

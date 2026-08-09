@@ -1,0 +1,30 @@
+:root {
+  --ll-bg: #f6f7fb;
+  --ll-surface: #ffffff;
+  --ll-text: #16181d;
+  --ll-text-secondary: #667085;
+  --ll-border: rgba(20, 24, 31, 0.08);
+  --ll-primary: #6c63ff;
+  --ll-primary-soft: rgba(108, 99, 255, 0.1);
+  --ll-secondary: #14b8a6;
+  --ll-secondary-soft: rgba(20, 184, 166, 0.12);
+  --ll-danger: #e5484d;
+  --ll-warning: #f59e0b;
+  --ll-grad-violet: linear-gradient(135deg, #ece9ff 0%, #f6f0ff 100%);
+  --ll-grad-blue: linear-gradient(135deg, #e8f1ff 0%, #f0f7ff 100%);
+  --ll-grad-teal: linear-gradient(135deg, #e4f8f4 0%, #effbf8 100%);
+  --ll-radius-sm: 12px;
+  --ll-radius-md: 18px;
+  --ll-radius-lg: 24px;
+  --ll-shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
+  --ll-shadow-md: 0 8px 24px rgba(16, 24, 40, 0.08);
+  --ll-space-xs: 8px;
+  --ll-space-sm: 14px;
+  --ll-space-md: 24px;
+  --ll-space-lg: 40px;
+  --ll-space-xl: 64px;
+  --el-color-primary: #6c63ff;
+  --el-border-radius-base: 12px;
+  --el-font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "PingFang SC", "Microsoft YaHei", sans-serif;
+}
