@@ -12,7 +12,7 @@ import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Arrays;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -27,7 +27,7 @@ import static org.mockito.Mockito.when;
  */
 class OrderTimeoutCloseSchedulerTest {
 
-    private static final LocalDateTime FIXED_CUTOFF = LocalDateTime.of(2026, 8, 6, 9, 45, 0);
+    private static final Instant FIXED_CUTOFF = Instant.parse("2026-08-06T10:00:00Z");
 
     @Test
     void schedulerDependsOnlyOnCloseService() {

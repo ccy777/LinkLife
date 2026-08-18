@@ -24,6 +24,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -47,7 +48,7 @@ import static org.mockito.Mockito.when;
 class OrderTimeoutCloseServiceTest {
 
     private static final LocalDateTime FIXED_NOW = LocalDateTime.of(2026, 8, 6, 10, 0, 0);
-    private static final LocalDateTime FIXED_CUTOFF = FIXED_NOW.minusMinutes(15);
+    private static final Instant FIXED_DUE_AT_CUTOFF = FIXED_NOW.toInstant(ZoneOffset.UTC);
 
     private OrderTimeoutCloseService service;
     private VoucherOrderMapper mapper;
@@ -58,6 +59,7 @@ class OrderTimeoutCloseServiceTest {
     void setUp() {
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), VoucherOrder.class);
         properties = new OrderTimeoutProperties();
+        properties.setZoneId("UTC");
         service = new OrderTimeoutCloseService();
         mapper = mock(VoucherOrderMapper.class);
         closeService = mock(OrderCloseTransactionService.class);
@@ -74,17 +76,17 @@ class OrderTimeoutCloseServiceTest {
         return page;
     }
 
-    private VoucherOrder candidate(long id, LocalDateTime createTime) {
+    private VoucherOrder candidate(long id, Instant paymentDueAt) {
         VoucherOrder order = new VoucherOrder();
         order.setId(id);
-        order.setCreateTime(createTime);
+        order.setPaymentDueAt(paymentDueAt);
         return order;
     }
 
     private List<VoucherOrder> fullBatch(int size) {
         List<VoucherOrder> records = new ArrayList<>();
         for (int i = 0; i < size; i++) {
-            records.add(candidate(1000L + i, FIXED_CUTOFF.minusMinutes(1)));
+            records.add(candidate(1000L + i, FIXED_DUE_AT_CUTOFF.minusSeconds(60)));
         }
         return records;
     }
@@ -104,9 +106,27 @@ class OrderTimeoutCloseServiceTest {
                 ArgumentCaptor.forClass(LambdaQueryWrapper.class);
         verify(mapper).selectPage(any(Page.class), captor.capture());
         String segment = captor.getValue().getSqlSegment();
-        assertThat(segment).contains("status").contains("create_time");
-        assertThat(segment).contains("create_time ASC").contains("id ASC");
-        assertThat(segment.indexOf("create_time ASC")).isLessThan(segment.indexOf("id ASC"));
+        assertThat(segment).contains("status").contains("payment_due_at");
+        assertThat(segment).contains("payment_due_at ASC").contains("id ASC");
+        assertThat(segment.indexOf("payment_due_at ASC")).isLessThan(segment.indexOf("id ASC"));
+    }
+
+    @Test
+    void runtimePaymentTimeoutChangeCannotMoveFrozenOrderDeadline() {
+        properties.setPaymentTimeout(java.time.Duration.ofSeconds(1));
+        when(mapper.selectPage(any(Page.class), any())).thenReturn(pageOf(List.of()));
+
+        service.closeExpiredOrders();
+
+        ArgumentCaptor<LambdaQueryWrapper<VoucherOrder>> captor =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(mapper).selectPage(any(Page.class), captor.capture());
+        LambdaQueryWrapper<VoucherOrder> query = captor.getValue();
+        assertThat(query.getSqlSegment()).contains("payment_due_at").doesNotContain("create_time");
+        query.getSqlSegment();
+        assertThat(query.getParamNameValuePairs().values()).contains(FIXED_DUE_AT_CUTOFF);
+        assertThat(query.getParamNameValuePairs().values())
+                .doesNotContain(FIXED_DUE_AT_CUTOFF.minusSeconds(1));
     }
 
     @Test
@@ -123,7 +143,7 @@ class OrderTimeoutCloseServiceTest {
         assertThat(pageCaptor.getValue().getSize()).isEqualTo(properties.getBatchSize());
         assertThat(pageCaptor.getValue().searchCount()).isFalse();
         String select = wrapperCaptor.getValue().getSqlSelect();
-        assertThat(select).contains("id").contains("create_time");
+        assertThat(select).contains("id").contains("payment_due_at");
         assertThat(select).doesNotContain("user_id").doesNotContain("voucher_id").doesNotContain("status");
     }
 
@@ -142,7 +162,7 @@ class OrderTimeoutCloseServiceTest {
     @Test
     void batchBelowSizeStops() {
         when(mapper.selectPage(any(Page.class), any()))
-                .thenReturn(pageOf(List.of(candidate(1001L, FIXED_CUTOFF.minusMinutes(1)))));
+                .thenReturn(pageOf(List.of(candidate(1001L, FIXED_DUE_AT_CUTOFF.minusSeconds(60)))));
         stubClosed();
 
         OrderTimeoutCloseResult result = service.closeExpiredOrders();
@@ -199,7 +219,7 @@ class OrderTimeoutCloseServiceTest {
     @Test
     void eachCandidateBuildsExactTimeoutCommand() {
         when(mapper.selectPage(any(Page.class), any()))
-                .thenReturn(pageOf(List.of(candidate(1001L, FIXED_CUTOFF.minusMinutes(1)))));
+                .thenReturn(pageOf(List.of(candidate(1001L, FIXED_DUE_AT_CUTOFF.minusSeconds(60)))));
         stubClosed();
 
         service.closeExpiredOrders();
@@ -210,7 +230,7 @@ class OrderTimeoutCloseServiceTest {
         assertThat(command.orderId()).isEqualTo(1001L);
         assertThat(command.userId()).isNull();
         assertThat(command.triggerType()).isEqualTo(OrderCloseTriggerType.TIMEOUT_CLOSE);
-        assertThat(command.cutoff()).isEqualTo(FIXED_CUTOFF);
+        assertThat(command.dueAtCutoff()).isEqualTo(FIXED_DUE_AT_CUTOFF);
         assertThat(command.reasonCode()).isEqualTo(OrderCloseReasonCode.TIMEOUT_EXPIRED);
         assertThat(command.now()).isEqualTo(FIXED_NOW);
     }
@@ -218,8 +238,8 @@ class OrderTimeoutCloseServiceTest {
     @Test
     void multipleCandidatesShareSameNowAndCutoff() {
         when(mapper.selectPage(any(Page.class), any()))
-                .thenReturn(pageOf(List.of(candidate(1001L, FIXED_CUTOFF.minusMinutes(1)),
-                        candidate(1002L, FIXED_CUTOFF.minusMinutes(2)))));
+                .thenReturn(pageOf(List.of(candidate(1001L, FIXED_DUE_AT_CUTOFF.minusSeconds(60)),
+                        candidate(1002L, FIXED_DUE_AT_CUTOFF.minusSeconds(120)))));
         stubClosed();
 
         service.closeExpiredOrders();
@@ -229,15 +249,15 @@ class OrderTimeoutCloseServiceTest {
         List<OrderCloseCommand> commands = captor.getAllValues();
         assertThat(commands).hasSize(2);
         assertThat(commands.get(0).now()).isEqualTo(commands.get(1).now());
-        assertThat(commands.get(0).cutoff()).isEqualTo(commands.get(1).cutoff());
+        assertThat(commands.get(0).dueAtCutoff()).isEqualTo(commands.get(1).dueAtCutoff());
         assertThat(commands.get(0).now()).isEqualTo(FIXED_NOW);
-        assertThat(commands.get(0).cutoff()).isEqualTo(FIXED_CUTOFF);
+        assertThat(commands.get(0).dueAtCutoff()).isEqualTo(FIXED_DUE_AT_CUTOFF);
     }
 
     @Test
     void closedCountsClosed() {
         when(mapper.selectPage(any(Page.class), any()))
-                .thenReturn(pageOf(List.of(candidate(1001L, FIXED_CUTOFF.minusMinutes(1)))));
+                .thenReturn(pageOf(List.of(candidate(1001L, FIXED_DUE_AT_CUTOFF.minusSeconds(60)))));
         stubClosed();
 
         OrderTimeoutCloseResult result = service.closeExpiredOrders();
@@ -249,9 +269,9 @@ class OrderTimeoutCloseServiceTest {
     @Test
     void alreadyCanceledNotFoundNotClosableCountSkipped() {
         when(mapper.selectPage(any(Page.class), any()))
-                .thenReturn(pageOf(List.of(candidate(1001L, FIXED_CUTOFF.minusMinutes(1)),
-                        candidate(1002L, FIXED_CUTOFF.minusMinutes(2)),
-                        candidate(1003L, FIXED_CUTOFF.minusMinutes(3)))));
+                .thenReturn(pageOf(List.of(candidate(1001L, FIXED_DUE_AT_CUTOFF.minusSeconds(60)),
+                        candidate(1002L, FIXED_DUE_AT_CUTOFF.minusSeconds(120)),
+                        candidate(1003L, FIXED_DUE_AT_CUTOFF.minusSeconds(180)))));
         when(closeService.close(any(OrderCloseCommand.class)))
                 .thenReturn(OrderCloseResult.ALREADY_CANCELED,
                         OrderCloseResult.NOT_FOUND,
@@ -267,7 +287,7 @@ class OrderTimeoutCloseServiceTest {
     @Test
     void dataInconsistentFailsClosed() {
         when(mapper.selectPage(any(Page.class), any()))
-                .thenReturn(pageOf(List.of(candidate(1001L, FIXED_CUTOFF.minusMinutes(1)))));
+                .thenReturn(pageOf(List.of(candidate(1001L, FIXED_DUE_AT_CUTOFF.minusSeconds(60)))));
         when(closeService.close(any(OrderCloseCommand.class)))
                 .thenReturn(OrderCloseResult.DATA_INCONSISTENT);
 
@@ -279,7 +299,7 @@ class OrderTimeoutCloseServiceTest {
     @Test
     void kernelExceptionPropagatesAndStopsRound() {
         when(mapper.selectPage(any(Page.class), any()))
-                .thenReturn(pageOf(List.of(candidate(1001L, FIXED_CUTOFF.minusMinutes(1)))));
+                .thenReturn(pageOf(List.of(candidate(1001L, FIXED_DUE_AT_CUTOFF.minusSeconds(60)))));
         when(closeService.close(any(OrderCloseCommand.class)))
                 .thenThrow(new IllegalStateException("db down"));
 
@@ -292,8 +312,8 @@ class OrderTimeoutCloseServiceTest {
     @Test
     void scannedStatisticIsPreserved() {
         when(mapper.selectPage(any(Page.class), any()))
-                .thenReturn(pageOf(List.of(candidate(1001L, FIXED_CUTOFF.minusMinutes(1)),
-                        candidate(1002L, FIXED_CUTOFF.minusMinutes(2)))));
+                .thenReturn(pageOf(List.of(candidate(1001L, FIXED_DUE_AT_CUTOFF.minusSeconds(60)),
+                        candidate(1002L, FIXED_DUE_AT_CUTOFF.minusSeconds(120)))));
         when(closeService.close(any(OrderCloseCommand.class)))
                 .thenReturn(OrderCloseResult.CLOSED, OrderCloseResult.NOT_CLOSABLE);
 
@@ -334,12 +354,12 @@ class OrderTimeoutCloseServiceTest {
         assertThat(OrderTimeoutCloseResult.class.isRecord()).isTrue();
 
         when(mapper.selectPage(any(Page.class), any()))
-                .thenReturn(pageOf(List.of(candidate(1001L, FIXED_CUTOFF.minusMinutes(1)))));
+                .thenReturn(pageOf(List.of(candidate(1001L, FIXED_DUE_AT_CUTOFF.minusSeconds(60)))));
         stubClosed();
 
         OrderTimeoutCloseResult result = service.closeExpiredOrders();
 
-        assertThat(result.cutoff()).isEqualTo(FIXED_CUTOFF);
+        assertThat(result.dueAtCutoff()).isEqualTo(FIXED_DUE_AT_CUTOFF);
         assertThat(result.batches()).isEqualTo(1);
         assertThat(result.scanned()).isEqualTo(1);
         assertThat(result.closed()).isEqualTo(1);

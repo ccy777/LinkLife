@@ -27,8 +27,8 @@ public class OrderTimeoutCloseScheduler {
             initialDelayString = "${linklife.trade.order-timeout.initial-delay-ms}")
     public void closeExpiredOrders() {
         OrderTimeoutCloseResult result = orderTimeoutCloseService.closeExpiredOrders();
-        log.info("超时订单关闭完成 cutoff={} batches={} scanned={} closed={} skipped={} limitReached={}",
-                result.cutoff(), result.batches(), result.scanned(),
+        log.info("超时订单关闭完成 dueAtCutoff={} batches={} scanned={} closed={} skipped={} limitReached={}",
+                result.dueAtCutoff(), result.batches(), result.scanned(),
                 result.closed(), result.skipped(), result.limitReached());
     }
 }

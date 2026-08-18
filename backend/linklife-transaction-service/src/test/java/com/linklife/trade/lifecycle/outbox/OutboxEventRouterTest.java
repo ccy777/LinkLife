@@ -1,6 +1,8 @@
 package com.linklife.trade.lifecycle.outbox;
 
 import com.linklife.trade.entity.OutboxEvent;
+import com.linklife.trade.lifecycle.timeout.OrderPaymentTimeoutEvent;
+import com.linklife.trade.lifecycle.timeout.OrderTimeoutRocketMqProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -80,6 +82,28 @@ class OutboxEventRouterTest {
         assertThatThrownBy(() -> router.registerRoutes())
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("必要路由缺失");
+    }
+
+    @Test
+    void mqEnabledRequiresTimeoutPublishRoute() {
+        OutboxBusinessHandler close = handler("ORDER_CLOSED", 1);
+        OutboxBusinessHandler create = handler("SECKILL_VOUCHER_CREATED", 1);
+        OrderTimeoutRocketMqProperties properties = new OrderTimeoutRocketMqProperties();
+        properties.setEnabled(true);
+        ReflectionTestUtils.setField(router, "rocketMqProperties", properties);
+        ReflectionTestUtils.setField(router, "businessHandlers", List.of(close, create));
+
+        assertThatThrownBy(router::registerRoutes)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("timeout publish 路由缺失");
+
+        router = new OutboxEventRouter();
+        ReflectionTestUtils.setField(router, "rocketMqProperties", properties);
+        ReflectionTestUtils.setField(router, "businessHandlers", List.of(close, create,
+                handler(OrderPaymentTimeoutEvent.EVENT_TYPE,
+                        OrderPaymentTimeoutEvent.EVENT_VERSION)));
+        org.assertj.core.api.Assertions.assertThatCode(router::registerRoutes)
+                .doesNotThrowAnyException();
     }
 
     @Test

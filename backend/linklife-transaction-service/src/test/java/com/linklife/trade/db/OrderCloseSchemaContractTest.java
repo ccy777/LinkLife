@@ -96,7 +96,7 @@ class OrderCloseSchemaContractTest {
 
         assertThat(orderDdl).contains("PRIMARY KEY (`id`) USING BTREE");
         assertThat(orderDdl).contains("UNIQUE KEY `uk_user_voucher` (`user_id`, `voucher_id`) USING BTREE");
-        assertThat(orderDdl).contains("KEY `idx_status_create_time_id` (`status`, `create_time`, `id`) USING BTREE");
+        assertThat(orderDdl).contains("KEY `idx_status_payment_due_at_id` (`status`, `payment_due_at`, `id`) USING BTREE");
         assertThat(orderDdl)
                 .contains("`status` tinyint(1) UNSIGNED NOT NULL DEFAULT 1 COMMENT '订单状态，1：未支付；2：已支付；3：已核销；4：已取消；5：退款中；6：已退款'");
         assertThat(sql).doesNotContain("DROP TABLE IF EXISTS `tb_voucher_order`\n");

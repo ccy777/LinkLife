@@ -5,7 +5,7 @@
 export const engineeringEvidence = {
   note: '经过本地环境验证的工程证据；本地 Docker 观测，并非实时遥测。',
   tests: {
-    count: 969,
+    count: 1006,
     failures: 0,
     errors: 0,
     skipped: 5,

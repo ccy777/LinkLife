@@ -8,6 +8,8 @@ import com.linklife.trade.submission.OrderCreationFailureService;
 import com.linklife.trade.submission.RedisOrderSubmissionStatusRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
+import org.springframework.context.event.ContextClosedEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.data.redis.connection.stream.Consumer;
 import org.springframework.data.redis.connection.stream.MapRecord;
 import org.springframework.data.redis.connection.stream.ReadOffset;
@@ -109,6 +111,16 @@ public class OrderStreamConsumer {
 
     @PreDestroy
     private void destroy() {
+        stopConsumer();
+    }
+
+    /** 在 Spring Lifecycle 停止 Redis 连接工厂之前先中断阻塞读取。 */
+    @EventListener(ContextClosedEvent.class)
+    void onContextClosed(ContextClosedEvent ignored) {
+        stopConsumer();
+    }
+
+    private void stopConsumer() {
         running = false;
         orderStreamExecutor.shutdownNow();
     }

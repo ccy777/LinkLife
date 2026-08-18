@@ -76,7 +76,7 @@ class OrderLifecycleServiceTest {
         assertThat(command.orderId()).isEqualTo(1001L);
         assertThat(command.userId()).isEqualTo(1L);
         assertThat(command.triggerType()).isEqualTo(OrderCloseTriggerType.USER_CANCEL);
-        assertThat(command.cutoff()).isNull();
+        assertThat(command.dueAtCutoff()).isNull();
         assertThat(command.reasonCode()).isEqualTo(OrderCloseReasonCode.USER_CANCEL);
         assertThat(command.now()).isEqualTo(FIXED_NOW);
     }

@@ -64,6 +64,22 @@ public class TransactionProductionConfigurationValidator
                 && !Boolean.TRUE.equals(outboxEnabled)) {
             fail("linklife.trade.order-timeout.enabled");
         }
+        Boolean rocketMqTimeoutEnabled = environment.getProperty(
+                "linklife.trade.order-timeout.rocketmq.enabled", Boolean.class);
+        if (Boolean.TRUE.equals(rocketMqTimeoutEnabled)) {
+            if (!Boolean.TRUE.equals(orderTimeoutEnabled)) {
+                fail("linklife.trade.order-timeout.enabled");
+            }
+            if (!Boolean.TRUE.equals(outboxEnabled)) {
+                fail("linklife.trade.outbox.enabled");
+            }
+            requireNonBlank(environment, "linklife.trade.order-timeout.rocketmq.endpoints");
+            requireNonBlank(environment, "linklife.trade.order-timeout.rocketmq.topic");
+            requireNonBlank(environment, "linklife.trade.order-timeout.rocketmq.tag");
+            requireNonBlank(environment, "linklife.trade.order-timeout.rocketmq.consumer-group");
+            validatePositiveDuration(environment,
+                    "linklife.trade.order-timeout.rocketmq.request-timeout");
+        }
     }
 
     private void validateProduction(Environment environment) {
@@ -106,6 +122,18 @@ public class TransactionProductionConfigurationValidator
 
     private void requireNonBlank(Environment environment, String key) {
         if (StrUtil.isBlank(environment.getProperty(key))) {
+            fail(key);
+        }
+    }
+
+    private void validatePositiveDuration(Environment environment, String key) {
+        String value = environment.getProperty(key);
+        try {
+            if (value == null || DurationStyle.detectAndParse(value).isZero()
+                    || DurationStyle.detectAndParse(value).isNegative()) {
+                fail(key);
+            }
+        } catch (Exception e) {
             fail(key);
         }
     }

@@ -1,12 +1,13 @@
 package com.linklife.trade.lifecycle.close;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 
 /**
  * 统一订单关闭命令（不可变）。
  *
  * <p>校验规则：orderId 必须大于 0；triggerType/reasonCode/now 非空；
- * USER_CANCEL 必须携带 userId 且 cutoff 为空；TIMEOUT_CLOSE 必须携带 cutoff 且 userId 为空；
+ * USER_CANCEL 必须携带 userId 且 dueAtCutoff 为空；TIMEOUT_CLOSE 必须携带 dueAtCutoff 且 userId 为空；
  * triggerType 与 reasonCode 必须匹配。</p>
  *
  * <p>本命令不从 UserHolder、Controller 或调度器内部读取上下文，调用方负责提供全部输入。</p>
@@ -14,7 +15,7 @@ import java.time.LocalDateTime;
  * @param orderId     订单 ID
  * @param userId      用户 ID（USER_CANCEL 必填；TIMEOUT_CLOSE 必须为空）
  * @param triggerType 触发来源
- * @param cutoff      超时截止时间（TIMEOUT_CLOSE 必填；USER_CANCEL 必须为空）
+ * @param dueAtCutoff 本次关闭允许命中的最晚 payment_due_at 绝对时刻
  * @param reasonCode  稳定原因码
  * @param now         关闭时间（整轮固定，可测试时间源）
  */
@@ -22,7 +23,7 @@ public record OrderCloseCommand(
         long orderId,
         Long userId,
         OrderCloseTriggerType triggerType,
-        LocalDateTime cutoff,
+        Instant dueAtCutoff,
         OrderCloseReasonCode reasonCode,
         LocalDateTime now) {
 
@@ -44,8 +45,8 @@ public record OrderCloseCommand(
                 if (userId == null) {
                     throw new IllegalArgumentException("USER_CANCEL 必须携带 userId");
                 }
-                if (cutoff != null) {
-                    throw new IllegalArgumentException("USER_CANCEL 不允许携带 cutoff");
+                if (dueAtCutoff != null) {
+                    throw new IllegalArgumentException("USER_CANCEL 不允许携带 dueAtCutoff");
                 }
                 if (reasonCode != OrderCloseReasonCode.USER_CANCEL) {
                     throw new IllegalArgumentException("triggerType 与 reasonCode 不匹配");
@@ -55,8 +56,8 @@ public record OrderCloseCommand(
                 if (userId != null) {
                     throw new IllegalArgumentException("TIMEOUT_CLOSE 不允许携带 userId");
                 }
-                if (cutoff == null) {
-                    throw new IllegalArgumentException("TIMEOUT_CLOSE 必须携带 cutoff");
+                if (dueAtCutoff == null) {
+                    throw new IllegalArgumentException("TIMEOUT_CLOSE 必须携带 dueAtCutoff");
                 }
                 if (reasonCode != OrderCloseReasonCode.TIMEOUT_EXPIRED) {
                     throw new IllegalArgumentException("triggerType 与 reasonCode 不匹配");

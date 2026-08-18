@@ -1,11 +1,14 @@
 package com.linklife.trade.lifecycle.outbox;
 
 import com.linklife.trade.entity.OutboxEvent;
+import com.linklife.trade.lifecycle.timeout.OrderPaymentTimeoutEvent;
+import com.linklife.trade.lifecycle.timeout.OrderTimeoutRocketMqProperties;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.HashMap;
@@ -33,6 +36,9 @@ public class OutboxEventRouter implements OutboxEventHandler {
     @Resource
     private List<OutboxBusinessHandler> businessHandlers;
 
+    @Autowired(required = false)
+    private OrderTimeoutRocketMqProperties rocketMqProperties;
+
     private final Map<String, OutboxBusinessHandler> routes = new HashMap<>();
 
     @PostConstruct
@@ -50,6 +56,13 @@ public class OutboxEventRouter implements OutboxEventHandler {
                 || !routes.containsKey(REQUIRED_SECKILL_VOUCHER_CREATED)) {
             throw new IllegalStateException(
                     "Outbox 必要路由缺失，fail-closed（需要 ORDER_CLOSED V1 与 SECKILL_VOUCHER_CREATED V1）");
+        }
+        String timeoutRoute = routeKey(
+                OrderPaymentTimeoutEvent.EVENT_TYPE, OrderPaymentTimeoutEvent.EVENT_VERSION);
+        if (rocketMqProperties != null && rocketMqProperties.isEnabled()
+                && !routes.containsKey(timeoutRoute)) {
+            throw new IllegalStateException(
+                    "RocketMQ timeout 已启用但 Outbox timeout publish 路由缺失，fail-closed");
         }
     }
 

@@ -18,6 +18,8 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -70,8 +72,8 @@ class OrderCloseMySqlManualIntegration extends Stage3E017gIntegrationSupport {
                 OrderCloseReasonCode.USER_CANCEL, now);
     }
 
-    private OrderCloseCommand timeoutClose(long orderId, LocalDateTime cutoff, LocalDateTime now) {
-        return new OrderCloseCommand(orderId, null, OrderCloseTriggerType.TIMEOUT_CLOSE, cutoff,
+    private OrderCloseCommand timeoutClose(long orderId, Instant dueAtCutoff, LocalDateTime now) {
+        return new OrderCloseCommand(orderId, null, OrderCloseTriggerType.TIMEOUT_CLOSE, dueAtCutoff,
                 OrderCloseReasonCode.TIMEOUT_EXPIRED, now);
     }
 
@@ -247,7 +249,7 @@ class OrderCloseMySqlManualIntegration extends Stage3E017gIntegrationSupport {
         createdRows.add(new long[]{orderId, voucherId});
 
         assertThat(orderCloseTransactionService.close(
-                timeoutClose(orderId, LocalDateTime.now().minusMinutes(5), LocalDateTime.now())))
+                timeoutClose(orderId, Instant.now().minusSeconds(300), LocalDateTime.now())))
                 .isEqualTo(OrderCloseResult.NOT_CLOSABLE);
         assertThat(orderStatus(orderId)).isEqualTo(1);
         assertThat(seckillStock(voucherId)).isEqualTo(6);
@@ -280,6 +282,7 @@ class OrderCloseMySqlManualIntegration extends Stage3E017gIntegrationSupport {
             CountDownLatch ready = new CountDownLatch(2);
             CountDownLatch start = new CountDownLatch(1);
             LocalDateTime now = LocalDateTime.now();
+            Instant dueAtCutoff = now.atZone(ZoneId.systemDefault()).toInstant();
             Future<OrderCloseResult> userFuture = executor.submit(() -> {
                 ready.countDown();
                 start.await();
@@ -288,7 +291,7 @@ class OrderCloseMySqlManualIntegration extends Stage3E017gIntegrationSupport {
             Future<OrderCloseResult> timeoutFuture = executor.submit(() -> {
                 ready.countDown();
                 start.await();
-                return orderCloseTransactionService.close(timeoutClose(orderId, now, now));
+                return orderCloseTransactionService.close(timeoutClose(orderId, dueAtCutoff, now));
             });
             assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
             start.countDown();

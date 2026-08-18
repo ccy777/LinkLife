@@ -26,6 +26,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
 
 import io.lettuce.core.RedisCommandExecutionException;
 import org.mockito.ArgumentCaptor;
@@ -304,6 +305,15 @@ class OrderStreamConsumerTest {
     void consumerExecutorFieldIsNotStatic() throws Exception {
         Field field = OrderStreamConsumer.class.getDeclaredField("orderStreamExecutor");
         assertThat(Modifier.isStatic(field.getModifiers())).isFalse();
+    }
+
+    @Test
+    void contextCloseStopsConsumerBeforeRedisLifecycleShutdown() throws Exception {
+        consumer.onContextClosed(null);
+
+        Field field = OrderStreamConsumer.class.getDeclaredField("orderStreamExecutor");
+        field.setAccessible(true);
+        assertThat(((ExecutorService) field.get(consumer)).isShutdown()).isTrue();
     }
 
     @Test

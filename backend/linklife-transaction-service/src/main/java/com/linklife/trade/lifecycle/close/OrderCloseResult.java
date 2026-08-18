@@ -14,7 +14,7 @@ public enum OrderCloseResult {
     ALREADY_CANCELED,
     /** 订单不存在或不属于当前用户（用户场景） */
     NOT_FOUND,
-    /** 订单状态不可关闭（PAID/USED/REFUNDING/REFUNDED，或超时已不满足 cutoff） */
+    /** 订单状态不可关闭（PAID/USED/REFUNDING/REFUNDED，或 payment_due_at 尚未到期） */
     NOT_CLOSABLE,
     /** 条件本应满足但 CAS=0，或仍为 UNPAID 却无法关闭（未发生写入前发现的数据异常） */
     DATA_INCONSISTENT

@@ -8,6 +8,7 @@ import lombok.EqualsAndHashCode;
 import lombok.experimental.Accessors;
 
 import java.io.Serializable;
+import java.time.Instant;
 import java.time.LocalDateTime;
 
 /**
@@ -56,6 +57,12 @@ public class VoucherOrder implements Serializable {
      * 下单时间
      */
     private LocalDateTime createTime;
+
+    /**
+     * 本订单创建时冻结的支付到期绝对时刻。MQ 与 Scheduler 共用此事实，
+     * 不得按运行时 payment-timeout 重新推导。
+     */
+    private Instant paymentDueAt;
 
     /**
      * 支付时间

@@ -17,10 +17,13 @@ flowchart TB
     Social --> SDB[(linklife_social)]
     Social -->|OpenFeign| Identity
     Transaction -->|Lua + Stream| Redis[(Redis DB0 + ACL)]
+    Transaction -->|Local Outbox| OB[(Local Outbox)]
+    Transaction -->|timer message| RMQ[(RocketMQ 5.x)]
     Merchant -->|Caffeine L1 + Redis L2| Redis
     Gateway -->|Reactive Redis session| Redis
     Identity -->|login code / token| Redis
     Social -->|lock namespace| Redis
+    RMQ -->|timeout trigger| Transaction
     subgraph Infra
         Nacos[(Nacos 3.0.3)]
         MySQL[(MySQL 8.4)]
@@ -41,7 +44,7 @@ flowchart TB
 | Gateway | 唯一外部入口；Reactive Redis 会话认证（新 key 优先、legacy 兼容、损坏 fail-closed）；内部头清洗；路由转发；Sentinel 热点限流 |
 | Identity | 用户注册/登录/验证码、会话 token、用户摘要内部批量 API |
 | Merchant | 商铺/商铺类型；Caffeine L1 + Redis L2 二级缓存；Redis GEO 附近商铺索引（启动重建 + afterCommit 维护） |
-| Transaction | 优惠券/秒杀/订单；Redis Lua 原子准入、Stream 异步落库、本地 Outbox、超时关闭、补偿/DLQ |
+| Transaction | 优惠券/秒杀/订单；Redis Lua 原子准入、Stream 异步落库、本地 Outbox、RocketMQ 超时触发、Scheduler 兜底、统一关闭内核、补偿/DLQ |
 | Social | 博客/关注/点赞；MySQL 为事实源；Social→Identity 批量用户摘要 Feign（展示降级/正确性 fail-closed） |
 
 ## 3. Database ownership
@@ -66,11 +69,32 @@ POST /api/voucher-order/seckill/{id}
   → Gateway 会话认证 + Sentinel 限流
   → Redis Lua：扣库存 → 一人一单（SADD）→ submission=ACCEPTED → XADD stream.orders
   → OrderStreamConsumer（group g1）：
-      markProcessing → MySQL 事务落库 → markPersisted → ACK
+      markProcessing → MySQL 事务落库（冻结 payment_due_at）→ markPersisted → ACK
   → 失败重试 Pending → 终态分类（恢复 / 补偿 / DLQ）
 ```
 
 订单状态（1-6）与提交状态机（ACCEPTED/PROCESSING/PERSISTED/FAILED）严格区分：MySQL 为最终事实源，Redis 为准入与提交状态。
+
+## 5a. Unpaid-order timeout path
+
+`payment_due_at` 是订单创建事务内冻结的订单级绝对到期事实，RocketMQ 主动触发与 Scheduler 修复兜底共享同一事实、同一关闭内核：
+
+```text
+payment_due_at
+  ├─ Local Outbox → RocketMQ 5.x timer message → PushConsumer
+  └─ Scheduler（payment_due_at 扫描，repair / sweep fallback）
+              ↓
+    OrderCloseTransactionService（MySQL 本地事务）
+              ↓
+    UNPAID → CANCELED CAS + MySQL stock +1 + 状态日志 + ORDER_CLOSED Outbox
+              ↓
+    Redis 幂等库存补偿（ORDER_CLOSED Outbox Handler）
+```
+
+- 订单创建与 timeout 发布意图在同一个 MySQL 本地事务提交，消除 DB/MQ 双写丢失窗口；
+- RocketMQ 投递为 at-least-once，重复消息与 MQ/Scheduler 竞争由 `UNPAID → CANCELED` CAS 吸收；
+- Broker 不可达时 Producer/Consumer 后台自动重试初始化，不阻断 Transaction 与 Scheduler；
+- RocketMQ 只属于 Transaction 未支付超时链路，**不是跨服务 Event Bus**。
 
 ## 6. Cache path
 
@@ -99,6 +123,7 @@ POST /api/voucher-order/seckill/{id}
 
 ## 10. Explicit non-goals
 
-- 不使用 RocketMQ / Kafka / Seata / Kubernetes / Prometheus / Grafana / SkyWalking。
+- 不使用 Kafka / Seata / Kubernetes / Prometheus / Grafana / SkyWalking。
+- RocketMQ 仅以 5.x 单节点开发/集成拓扑出现在 Transaction 超时链路，不是生产集群 HA，也不是跨服务总线。
 - 未做 Nacos 集群、MySQL 主从、Redis Cluster/Sentinel、网络分区演练。
 - 性能数字为单机 Docker 观测，不代表生产容量。

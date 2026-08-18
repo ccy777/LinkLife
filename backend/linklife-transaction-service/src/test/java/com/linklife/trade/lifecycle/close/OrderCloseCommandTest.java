@@ -2,6 +2,7 @@ package com.linklife.trade.lifecycle.close;
 
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -13,7 +14,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class OrderCloseCommandTest {
 
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 8, 6, 10, 0, 0);
-    private static final LocalDateTime CUTOFF = NOW.minusMinutes(15);
+    private static final Instant CUTOFF = Instant.parse("2026-08-06T10:00:00Z");
 
     @Test
     void userCancelCommandIsValid() {
@@ -23,7 +24,7 @@ class OrderCloseCommandTest {
 
         assertThat(command.orderId()).isEqualTo(1001L);
         assertThat(command.userId()).isEqualTo(1L);
-        assertThat(command.cutoff()).isNull();
+        assertThat(command.dueAtCutoff()).isNull();
         assertThat(command.reasonCode()).isEqualTo(OrderCloseReasonCode.USER_CANCEL);
     }
 
@@ -34,7 +35,7 @@ class OrderCloseCommandTest {
                 OrderCloseReasonCode.TIMEOUT_EXPIRED, NOW);
 
         assertThat(command.userId()).isNull();
-        assertThat(command.cutoff()).isEqualTo(CUTOFF);
+        assertThat(command.dueAtCutoff()).isEqualTo(CUTOFF);
     }
 
     @Test
@@ -73,7 +74,7 @@ class OrderCloseCommandTest {
                 1001L, null, OrderCloseTriggerType.TIMEOUT_CLOSE, null,
                 OrderCloseReasonCode.TIMEOUT_EXPIRED, NOW))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("cutoff");
+                .hasMessageContaining("dueAtCutoff");
     }
 
     @Test
@@ -82,7 +83,7 @@ class OrderCloseCommandTest {
                 1001L, 1L, OrderCloseTriggerType.USER_CANCEL, CUTOFF,
                 OrderCloseReasonCode.USER_CANCEL, NOW))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("cutoff");
+                .hasMessageContaining("dueAtCutoff");
     }
 
     @Test

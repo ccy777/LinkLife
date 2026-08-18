@@ -10,8 +10,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * 超时扫描复合索引的 schema 契约测试：
- * idx_status_create_time_id 唯一、列顺序严格 status/create_time/id、
- * 主键与 uk_user_voucher 保留、无重复索引定义、列类型与默认值不变。
+ * idx_status_payment_due_at_id 唯一、列顺序严格 status/payment_due_at/id、
+ * 主键与 uk_user_voucher 保留、payment_due_at 非空且无重复索引定义。
  */
 class OrderTimeoutSchemaContractTest {
 
@@ -20,18 +20,18 @@ class OrderTimeoutSchemaContractTest {
         String ddl = voucherOrderDdl();
 
         assertThat(ddl)
-                .contains("KEY `idx_status_create_time_id` (`status`, `create_time`, `id`) USING BTREE");
-        assertThat(countOccurrences(ddl, "idx_status_create_time_id")).isEqualTo(1);
+                .contains("KEY `idx_status_payment_due_at_id` (`status`, `payment_due_at`, `id`) USING BTREE");
+        assertThat(countOccurrences(ddl, "idx_status_payment_due_at_id")).isEqualTo(1);
     }
 
     @Test
-    void indexColumnOrderIsStrictlyStatusCreateTimeId() throws Exception {
+    void indexColumnOrderIsStrictlyStatusPaymentDueAtId() throws Exception {
         String ddl = voucherOrderDdl();
-        String index = "`idx_status_create_time_id` (`status`, `create_time`, `id`)";
+        String index = "`idx_status_payment_due_at_id` (`status`, `payment_due_at`, `id`)";
 
         assertThat(ddl).contains(index);
-        assertThat(ddl).doesNotContain("`idx_status_create_time_id` (`create_time`, `status`, `id`)");
-        assertThat(ddl).doesNotContain("`idx_status_create_time_id` (`id`, `create_time`, `status`)");
+        assertThat(ddl).doesNotContain("`idx_status_payment_due_at_id` (`payment_due_at`, `status`, `id`)");
+        assertThat(ddl).doesNotContain("`idx_status_payment_due_at_id` (`id`, `payment_due_at`, `status`)");
     }
 
     @Test
@@ -46,7 +46,7 @@ class OrderTimeoutSchemaContractTest {
     void noDuplicateIndexDefinitionInWholeFile() throws Exception {
         String sql = readSql();
 
-        assertThat(countOccurrences(sql, "idx_status_create_time_id")).isEqualTo(1);
+        assertThat(countOccurrences(sql, "idx_status_payment_due_at_id")).isEqualTo(1);
     }
 
     @Test
@@ -55,6 +55,7 @@ class OrderTimeoutSchemaContractTest {
 
         assertThat(ddl).contains("`status` tinyint(1) UNSIGNED NOT NULL DEFAULT 1");
         assertThat(ddl).contains("`create_time` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '下单时间'");
+        assertThat(ddl).contains("`payment_due_at` timestamp NOT NULL COMMENT '订单创建时冻结的支付到期绝对时刻（秒级精度）'");
         assertThat(ddl).contains("`update_time` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
     }
 

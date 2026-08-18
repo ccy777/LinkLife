@@ -33,7 +33,7 @@ import java.util.UUID;
  * 状态日志写入 → 一条唯一 ORDER_CLOSED Outbox 事件写入；任一步失败整体回滚。</p>
  *
  * <p>本服务不依赖 UserHolder、Controller 或调度器；Redis 库存、Redis 资格与 MQ 不属于本事务
- * （Redis 幂等补偿由后续 017F 通过 Outbox 驱动）。不执行 SREM，不修改 Redis。</p>
+ * （Redis 幂等补偿由现有 {@code ORDER_CLOSED} Outbox Handler 驱动）。不执行 SREM，不修改 Redis。</p>
  *
  * <p>约定：voucher_id 为 tb_seckill_voucher 主键，库存返还更新物理上最多影响 1 行；
  * 返回 0 行或异常行数均视为数据异常并抛异常回滚。</p>
@@ -73,7 +73,7 @@ public class OrderCloseTransactionService {
     /**
      * 执行统一订单关闭事务。
      *
-     * @param command 关闭命令（含触发来源、归属、cutoff、原因码与固定 now）
+     * @param command 关闭命令（含触发来源、归属、dueAtCutoff、原因码与固定 now）
      * @return 冻结结果：CLOSED / ALREADY_CANCELED / NOT_FOUND / NOT_CLOSABLE
      * @throws IllegalStateException 影响行数异常、条件本应满足却 CAS=0、未知状态、写入失败（fail-closed，事务回滚）
      */
@@ -112,13 +112,14 @@ public class OrderCloseTransactionService {
     }
 
     /**
-     * 按命令可见范围查询订单最小必要字段（id/user_id/voucher_id/status/create_time）。
+     * 按命令可见范围查询订单最小必要字段。
      * 用户场景按 id+userId 查询，避免越权读取或泄露其他用户订单。
      */
     private VoucherOrder queryOrder(OrderCloseCommand command) {
         LambdaQueryWrapper<VoucherOrder> wrapper = new LambdaQueryWrapper<VoucherOrder>()
                 .select(VoucherOrder::getId, VoucherOrder::getUserId, VoucherOrder::getVoucherId,
-                        VoucherOrder::getStatus, VoucherOrder::getCreateTime)
+                        VoucherOrder::getStatus, VoucherOrder::getCreateTime,
+                        VoucherOrder::getPaymentDueAt)
                 .eq(VoucherOrder::getId, command.orderId());
         if (command.triggerType() == OrderCloseTriggerType.USER_CANCEL) {
             wrapper.eq(VoucherOrder::getUserId, command.userId());
@@ -147,7 +148,7 @@ public class OrderCloseTransactionService {
     /**
      * 订单关闭 CAS：
      * USER_CANCEL → id + user_id + status=UNPAID；
-     * TIMEOUT_CLOSE → id + status=UNPAID + create_time<=cutoff。
+     * TIMEOUT_CLOSE → id + status=UNPAID + payment_due_at<=dueAtCutoff。
      */
     private int executeCloseCas(OrderCloseCommand command) {
         LambdaUpdateWrapper<VoucherOrder> wrapper = new LambdaUpdateWrapper<VoucherOrder>()
@@ -158,7 +159,7 @@ public class OrderCloseTransactionService {
         if (command.triggerType() == OrderCloseTriggerType.USER_CANCEL) {
             wrapper.eq(VoucherOrder::getUserId, command.userId());
         } else {
-            wrapper.le(VoucherOrder::getCreateTime, command.cutoff());
+            wrapper.le(VoucherOrder::getPaymentDueAt, command.dueAtCutoff());
         }
         return voucherOrderMapper.update(null, wrapper);
     }
@@ -183,8 +184,8 @@ public class OrderCloseTransactionService {
                 return OrderCloseResult.NOT_CLOSABLE;
             case UNPAID:
                 if (command.triggerType() == OrderCloseTriggerType.TIMEOUT_CLOSE
-                        && current.getCreateTime() != null
-                        && current.getCreateTime().isAfter(command.cutoff())) {
+                        && current.getPaymentDueAt() != null
+                        && current.getPaymentDueAt().isAfter(command.dueAtCutoff())) {
                     return OrderCloseResult.NOT_CLOSABLE;
                 }
                 throw new IllegalStateException(
@@ -201,7 +202,8 @@ public class OrderCloseTransactionService {
     private VoucherOrder queryOrderForCurrentRead(OrderCloseCommand command) {
         LambdaQueryWrapper<VoucherOrder> wrapper = new LambdaQueryWrapper<VoucherOrder>()
                 .select(VoucherOrder::getId, VoucherOrder::getUserId, VoucherOrder::getVoucherId,
-                        VoucherOrder::getStatus, VoucherOrder::getCreateTime)
+                        VoucherOrder::getStatus, VoucherOrder::getCreateTime,
+                        VoucherOrder::getPaymentDueAt)
                 .eq(VoucherOrder::getId, command.orderId());
         if (command.triggerType() == OrderCloseTriggerType.USER_CANCEL) {
             wrapper.eq(VoucherOrder::getUserId, command.userId());

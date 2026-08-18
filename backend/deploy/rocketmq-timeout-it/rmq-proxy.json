@@ -1,0 +1,5 @@
+{
+  "proxyClusterName": "linklifeCodexItCluster",
+  "rocketMQClusterName": "linklifeCodexItCluster",
+  "useEndpointPortFromRequest": true
+}

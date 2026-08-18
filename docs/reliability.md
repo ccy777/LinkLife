@@ -39,6 +39,50 @@
 | Observed | pending_baseline=0；exact Stream message id 进入 PEL（consumer=c1，delivery_count=1）；期间 submission 保持 ACCEPTED、DLQ 不增；恢复后同一 orderId 落库（orders=1、distinct=1、duplicate=0），submission=PERSISTED，同一 exact PEL 条目消失 |
 | Recovery | 本地演练记录收敛约 8.45 s（≤60s gate） |
 
+## Drill E — RocketMQ Broker publish outage
+
+| item | detail |
+|---|---|
+| Failure injected | Broker 不可达时发布 timeout 消息 |
+| Expected invariant | Outbox 保持 PENDING、retry_count 增加、不写假 SUCCESS；Broker 恢复后自动发送并关单 |
+| Observed | 发布失败不假成功；恢复后 publish → 定时消费 → 关单 → Redis 补偿收敛：PASS |
+| Recovery | Broker 恢复后由既有 Outbox 重试驱动 |
+
+## Drill F — RocketMQ Consumer outage at dueAt
+
+| item | detail |
+|---|---|
+| Failure injected | Consumer 在 dueAt 时点停机 |
+| Expected invariant | 订单保持 UNPAID；恢复后的消费者处理持久化定时消息并产生一次关闭 |
+| Observed | 停机期间订单未关闭；replacement consumer 消费后收敛：PASS |
+| Recovery | 消费者重建后自动恢复 |
+
+## Drill G — NameServer + Broker restart
+
+| item | detail |
+|---|---|
+| Failure injected | 已入 Broker 的定时消息在 NameServer + Broker 重启 |
+| Expected invariant | 定时消息从持久化 store 恢复并消费 |
+| Observed | 重启后消息被消费并完成关闭：PASS（single-node boundary only） |
+| Recovery | 组件重启后自动恢复 |
+
+## Drill H — Broker unavailable at Transaction cold start
+
+| item | detail |
+|---|---|
+| Failure injected | Broker 在应用启动前已 down，再启动 Transaction |
+| Expected invariant | Spring Context 可用；Scheduler 可基于 payment_due_at 关单并回补 MySQL 库存；Broker 恢复后同一进程 Producer/Consumer 自动就绪 |
+| Observed | Context/Scheduler 正常；Broker 恢复后 Producer ready ≈ 16.34 s、Consumer ready ≈ 16.42 s（本地观测） |
+| Recovery | 后台初始化器自动重试 |
+
+## RocketMQ duplicate / race verification
+
+- 3 条物理重复 timeout 消息：只有 1 次 `UNPAID → CANCELED` CAS 成功，1 次库存返还、1 条状态日志、1 条 ORDER_CLOSED Outbox；
+- MQ 与 Scheduler 对同一订单同时触发：只有 1 个 CAS 胜者；
+- 本地单节点观测 `consumeAt - dueAt ≈ 199.378 ms`。
+
+以上均为本地单节点开发观测，不代表生产 RocketMQ 集群 HA、SLA 或吞吐保证。
+
 ## Summary
 
 | Scenario | Expected behavior | Evidence |
@@ -47,5 +91,9 @@
 | Identity outage | 展示降级、required fail-closed、恢复验证 | PASS |
 | Redis restart | AOF 恢复 session/stream/PEL | PASS |
 | MySQL outage during seckill | exact PEL → 恢复后同一 orderId 落库 | PASS |
+| Broker publish outage | Outbox 重试收敛、不假成功 | PASS |
+| Consumer outage at dueAt | 订单保持 UNPAID，恢复后收敛 | PASS |
+| NameServer + Broker restart | 定时消息从持久化 store 恢复 | PASS |
+| Broker-down cold start | Context/Scheduler 可用，同进程客户端自动恢复 | PASS |
 
 所有“恢复时间/收敛时间”均为本地演练观测值，不代表 SLA。

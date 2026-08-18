@@ -35,7 +35,9 @@ import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.UUID;
 
@@ -57,7 +59,7 @@ import static org.mockito.Mockito.when;
 class OrderCloseTransactionServiceTest {
 
     private static final LocalDateTime FIXED_NOW = LocalDateTime.of(2026, 8, 6, 10, 0, 0);
-    private static final LocalDateTime FIXED_CUTOFF = FIXED_NOW.minusMinutes(15);
+    private static final Instant FIXED_DUE_AT_CUTOFF = FIXED_NOW.toInstant(ZoneOffset.UTC);
 
     private OrderCloseTransactionService service;
     private VoucherOrderMapper orderMapper;
@@ -108,7 +110,8 @@ class OrderCloseTransactionServiceTest {
         order.setUserId(1L);
         order.setVoucherId(2L);
         order.setStatus(VoucherOrderStatus.UNPAID.getCode());
-        order.setCreateTime(FIXED_CUTOFF.minusMinutes(1));
+        order.setCreateTime(FIXED_NOW.minusMinutes(16));
+        order.setPaymentDueAt(FIXED_DUE_AT_CUTOFF.minusSeconds(60));
         return order;
     }
 
@@ -118,7 +121,7 @@ class OrderCloseTransactionServiceTest {
     }
 
     private OrderCloseCommand timeoutCloseCommand() {
-        return new OrderCloseCommand(1001L, null, OrderCloseTriggerType.TIMEOUT_CLOSE, FIXED_CUTOFF,
+        return new OrderCloseCommand(1001L, null, OrderCloseTriggerType.TIMEOUT_CLOSE, FIXED_DUE_AT_CUTOFF,
                 OrderCloseReasonCode.TIMEOUT_EXPIRED, FIXED_NOW);
     }
 
@@ -217,10 +220,10 @@ class OrderCloseTransactionServiceTest {
         verify(orderMapper).update(isNull(), casCaptor.capture());
         LambdaUpdateWrapper<VoucherOrder> cas = casCaptor.getValue();
         String segment = cas.getSqlSegment();
-        assertThat(segment).contains("id").contains("status").contains("create_time");
+        assertThat(segment).contains("id").contains("status").contains("payment_due_at");
         cas.getSqlSegment();
         assertThat(cas.getParamNameValuePairs().values())
-                .contains(1001L, VoucherOrderStatus.UNPAID.getCode(), FIXED_CUTOFF);
+                .contains(1001L, VoucherOrderStatus.UNPAID.getCode(), FIXED_DUE_AT_CUTOFF);
         assertThat(cas.getParamNameValuePairs().values()).doesNotContain(1L);
 
         ArgumentCaptor<OrderStatusLog> logCaptor = ArgumentCaptor.forClass(OrderStatusLog.class);
@@ -504,9 +507,9 @@ class OrderCloseTransactionServiceTest {
     }
 
     @Test
-    void zeroRowUnpaidButCutoffNotSatisfiedReturnsNotClosableForTimeout() {
+    void zeroRowUnpaidButPaymentDueAtNotSatisfiedReturnsNotClosableForTimeout() {
         VoucherOrder fresh = unpaidOrder();
-        fresh.setCreateTime(FIXED_CUTOFF.plusMinutes(1));
+        fresh.setPaymentDueAt(FIXED_DUE_AT_CUTOFF.plusSeconds(60));
         when(orderMapper.selectOne(any())).thenReturn(unpaidOrder(), fresh);
         when(orderMapper.update(isNull(), any(LambdaUpdateWrapper.class))).thenReturn(0);
 
@@ -525,7 +528,8 @@ class OrderCloseTransactionServiceTest {
         order.setUserId(1L);
         order.setVoucherId(2L);
         order.setStatus(status);
-        order.setCreateTime(FIXED_CUTOFF.minusMinutes(1));
+        order.setCreateTime(FIXED_NOW.minusMinutes(16));
+        order.setPaymentDueAt(FIXED_DUE_AT_CUTOFF.minusSeconds(60));
         return order;
     }
 }

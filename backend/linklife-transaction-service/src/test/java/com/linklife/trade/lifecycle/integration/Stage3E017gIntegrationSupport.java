@@ -8,6 +8,9 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
 import java.time.LocalDateTime;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -60,9 +63,17 @@ abstract class Stage3E017gIntegrationSupport {
     }
 
     protected void insertOrder(long orderId, long userId, long voucherId, int status, LocalDateTime createTime) {
-        jdbcTemplate.update("INSERT INTO tb_voucher_order (id, user_id, voucher_id, status, create_time, update_time) "
-                        + "VALUES (?, ?, ?, ?, ?, ?)",
-                orderId, userId, voucherId, status, createTime, LocalDateTime.now());
+        Instant paymentDueAt = createTime.atZone(ZoneId.of("Asia/Shanghai")).toInstant()
+                .plus(Duration.ofMinutes(15));
+        insertOrder(orderId, userId, voucherId, status, createTime, paymentDueAt);
+    }
+
+    protected void insertOrder(long orderId, long userId, long voucherId, int status,
+                               LocalDateTime createTime, Instant paymentDueAt) {
+        jdbcTemplate.update("INSERT INTO tb_voucher_order "
+                        + "(id, user_id, voucher_id, status, create_time, payment_due_at, update_time) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                orderId, userId, voucherId, status, createTime, paymentDueAt, LocalDateTime.now());
     }
 
     protected int orderStatus(long orderId) {

@@ -1,11 +1,11 @@
 package com.linklife.trade.lifecycle.timeout;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * 单轮超时关闭的不可变汇总结果。
  *
- * @param cutoff        本轮固定截止时间（now - unpaid-timeout-minutes）
+ * @param dueAtCutoff   本轮固定的 payment_due_at 截止绝对时刻
  * @param batches       本轮实际处理的批次数量
  * @param scanned       本轮扫描到的候选订单总数
  * @param closed        本轮成功 CAS 关闭（UNPAID → CANCELED）的订单数
@@ -13,7 +13,7 @@ import java.time.LocalDateTime;
  * @param limitReached  是否达到单轮最大批次数上限（true 时由下一轮继续处理剩余订单）
  */
 public record OrderTimeoutCloseResult(
-        LocalDateTime cutoff,
+        Instant dueAtCutoff,
         int batches,
         int scanned,
         int closed,

@@ -3,14 +3,20 @@ package com.linklife.trade.application;
 import com.baomidou.mybatisplus.extension.conditions.update.UpdateChainWrapper;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.linklife.promotion.entity.SeckillVoucher;
 import com.linklife.promotion.service.ISeckillVoucherService;
+import com.linklife.shared.outbox.OutboxPublishCommand;
+import com.linklife.shared.outbox.OutboxPublisher;
 import com.linklife.trade.entity.VoucherOrder;
+import com.linklife.trade.lifecycle.timeout.OrderTimeoutProperties;
+import com.linklife.trade.lifecycle.timeout.OrderTimeoutRocketMqProperties;
 import com.linklife.trade.mapper.VoucherOrderMapper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.core.io.ClassPathResource;
@@ -23,6 +29,11 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StreamUtils;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -51,6 +62,9 @@ class VoucherOrderTransactionalServiceTest {
     private RLock lock;
     private VoucherOrderMapper orderMapper;
     private PlatformTransactionManager txManager;
+    private OutboxPublisher outboxPublisher;
+    private OrderTimeoutRocketMqProperties rocketMqProperties;
+    private OrderTimeoutProperties timeoutProperties;
 
     @BeforeEach
     void setUp() {
@@ -60,6 +74,9 @@ class VoucherOrderTransactionalServiceTest {
         lock = mock(RLock.class);
         orderMapper = mock(VoucherOrderMapper.class);
         txManager = mock(PlatformTransactionManager.class);
+        outboxPublisher = mock(OutboxPublisher.class);
+        rocketMqProperties = new OrderTimeoutRocketMqProperties();
+        timeoutProperties = new OrderTimeoutProperties();
         TransactionStatus txStatus = mock(TransactionStatus.class);
 
         when(redissonClient.getLock("transaction:lock:order:1")).thenReturn(lock);
@@ -74,6 +91,11 @@ class VoucherOrderTransactionalServiceTest {
         ReflectionTestUtils.setField(service, "seckillVoucherService", seckillService);
         ReflectionTestUtils.setField(service, "redissonClient", redissonClient);
         ReflectionTestUtils.setField(service, "transactionTemplate", transactionTemplate);
+        ReflectionTestUtils.setField(service, "outboxPublisher", outboxPublisher);
+        ReflectionTestUtils.setField(service, "objectMapper", new ObjectMapper().findAndRegisterModules()
+                .disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS));
+        ReflectionTestUtils.setField(service, "rocketMqProperties", rocketMqProperties);
+        ReflectionTestUtils.setField(service, "orderTimeoutProperties", timeoutProperties);
     }
 
     private void stubStockUpdate(boolean success) {
@@ -291,5 +313,88 @@ class VoucherOrderTransactionalServiceTest {
         verify(txManager).rollback(any(TransactionStatus.class));
         verify(txManager, never()).commit(any(TransactionStatus.class));
         verify(lock).unlock();
+    }
+
+    @Test
+    void mqEnabledCreatesExactlyOneFrozenTimeoutIntentInSameTransaction() {
+        rocketMqProperties.setEnabled(true);
+        timeoutProperties.setPaymentTimeout(Duration.ofMinutes(15));
+        LocalDateTime createdAt = LocalDateTime.of(2026, 8, 18, 10, 0);
+        ReflectionTestUtils.setField(service, "clock",
+                Clock.fixed(createdAt.atZone(ZoneId.of("Asia/Shanghai")).toInstant(),
+                        ZoneId.of("Asia/Shanghai")));
+        stubStockUpdate(true);
+        when(orderMapper.insert(any(VoucherOrder.class))).thenReturn(1);
+
+        assertThat(service.process(order()))
+                .isEqualTo(VoucherOrderTransactionalService.ProcessResult.CREATED);
+
+        ArgumentCaptor<VoucherOrder> orderCaptor = ArgumentCaptor.forClass(VoucherOrder.class);
+        verify(orderMapper).insert(orderCaptor.capture());
+        assertThat(orderCaptor.getValue().getStatus()).isEqualTo(1);
+        assertThat(orderCaptor.getValue().getCreateTime()).isEqualTo(createdAt);
+        assertThat(orderCaptor.getValue().getPaymentDueAt())
+                .isEqualTo(Instant.parse("2026-08-18T02:15:00Z"));
+        assertThat(orderCaptor.getValue().getUpdateTime()).isEqualTo(createdAt);
+
+        ArgumentCaptor<OutboxPublishCommand> commandCaptor =
+                ArgumentCaptor.forClass(OutboxPublishCommand.class);
+        verify(outboxPublisher).publish(commandCaptor.capture());
+        OutboxPublishCommand command = commandCaptor.getValue();
+        assertThat(command.eventType()).isEqualTo("ORDER_PAYMENT_TIMEOUT_CHECK");
+        assertThat(command.businessKey())
+                .isEqualTo("VOUCHER_ORDER:PAYMENT_TIMEOUT_CHECK:1001:V1");
+        assertThat(command.now()).isEqualTo(createdAt);
+        assertThat(command.payload()).contains("\"createdAt\":\"2026-08-18T10:00:00\"")
+                .contains("\"createdAtInstant\":\"2026-08-18T02:00:00Z\"")
+                .contains("\"dueAt\":\"2026-08-18T02:15:00Z\"");
+        verify(txManager).commit(any(TransactionStatus.class));
+    }
+
+    @Test
+    void mqDisabledStillFreezesOrderDeadlineButDoesNotCreateMqIntent() {
+        LocalDateTime createdAt = LocalDateTime.of(2026, 8, 18, 10, 0);
+        ReflectionTestUtils.setField(service, "clock",
+                Clock.fixed(Instant.parse("2026-08-18T02:00:00Z"), ZoneId.of("UTC")));
+        stubStockUpdate(true);
+        when(orderMapper.insert(any(VoucherOrder.class))).thenReturn(1);
+
+        assertThat(service.process(order()))
+                .isEqualTo(VoucherOrderTransactionalService.ProcessResult.CREATED);
+
+        ArgumentCaptor<VoucherOrder> captor = ArgumentCaptor.forClass(VoucherOrder.class);
+        verify(orderMapper).insert(captor.capture());
+        assertThat(captor.getValue().getCreateTime()).isEqualTo(createdAt);
+        assertThat(captor.getValue().getPaymentDueAt())
+                .isEqualTo(Instant.parse("2026-08-18T02:15:00Z"));
+        verify(outboxPublisher, never()).publish(any());
+    }
+
+    @Test
+    void sameOrderDuplicateDoesNotCreateSecondTimeoutIntent() {
+        rocketMqProperties.setEnabled(true);
+        VoucherOrder existing = new VoucherOrder();
+        existing.setId(1001L);
+        when(orderMapper.selectOne(any())).thenReturn(existing);
+
+        assertThat(service.process(order()))
+                .isEqualTo(VoucherOrderTransactionalService.ProcessResult.IDEMPOTENT_SAME_ORDER);
+
+        verify(outboxPublisher, never()).publish(any());
+    }
+
+    @Test
+    void timeoutIntentFailureRollsBackOrderAndStockTransaction() {
+        rocketMqProperties.setEnabled(true);
+        stubStockUpdate(true);
+        when(orderMapper.insert(any(VoucherOrder.class))).thenReturn(1);
+        RuntimeException writeFailure = new RuntimeException("outbox write failed");
+        org.mockito.Mockito.doThrow(writeFailure).when(outboxPublisher).publish(any());
+
+        assertThatThrownBy(() -> service.process(order()))
+                .isSameAs(writeFailure);
+
+        verify(txManager).rollback(any(TransactionStatus.class));
+        verify(txManager, never()).commit(any(TransactionStatus.class));
     }
 }

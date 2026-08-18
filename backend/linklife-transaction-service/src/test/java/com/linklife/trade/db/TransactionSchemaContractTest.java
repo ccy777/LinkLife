@@ -34,7 +34,7 @@ class TransactionSchemaContractTest {
     void keepsRequiredIndexes() throws Exception {
         String sql = schema();
         assertThat(sql).contains("uk_user_voucher");
-        assertThat(sql).contains("idx_status_create_time_id");
+        assertThat(sql).contains("idx_status_payment_due_at_id");
         assertThat(sql).contains("uk_order_status_log_idem");
         assertThat(sql).contains("uk_order_status_log_transition");
         assertThat(sql).contains("idx_order_status_log_order");
@@ -57,5 +57,11 @@ class TransactionSchemaContractTest {
                 "src/main/resources/db/upgrade/001_add_voucher_order_unique_constraint.sql"));
         assertThat(migration).contains("tb_voucher_order");
         assertThat(migration).contains("uk_user_voucher");
+
+        String timeoutMigration = Files.readString(Paths.get(
+                "src/main/resources/db/upgrade/002_add_voucher_order_payment_due_at.sql"));
+        assertThat(timeoutMigration).contains("payment_due_at");
+        assertThat(timeoutMigration).contains("idx_status_payment_due_at_id");
+        assertThat(timeoutMigration).contains("INTERVAL 15 MINUTE");
     }
 }

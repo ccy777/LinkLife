@@ -52,11 +52,22 @@ linklife:
   trade:
     order-timeout:
       enabled: ${LINKLIFE_ORDER_TIMEOUT_ENABLED:false}
-      unpaid-timeout-minutes: ${LINKLIFE_ORDER_TIMEOUT_MINUTES:15}
+      # Frozen contract: whole-second Duration in [1s, 24h]; sub-second values fail startup.
+      payment-timeout: ${LINKLIFE_ORDER_PAYMENT_TIMEOUT:${LINKLIFE_ORDER_TIMEOUT_MINUTES:15}m}
+      zone-id: ${LINKLIFE_ORDER_TIMEOUT_ZONE_ID:Asia/Shanghai}
       scan-delay-ms: ${LINKLIFE_ORDER_TIMEOUT_SCAN_DELAY_MS:60000}
       initial-delay-ms: ${LINKLIFE_ORDER_TIMEOUT_INITIAL_DELAY_MS:30000}
       batch-size: ${LINKLIFE_ORDER_TIMEOUT_BATCH_SIZE:100}
       max-batches-per-run: ${LINKLIFE_ORDER_TIMEOUT_MAX_BATCHES:10}
+      rocketmq:
+        enabled: ${LINKLIFE_ORDER_TIMEOUT_MQ_ENABLED:false}
+        endpoints: ${LINKLIFE_ROCKETMQ_ENDPOINTS:}
+        topic: ${LINKLIFE_ORDER_TIMEOUT_MQ_TOPIC:linklife-order-payment-timeout}
+        tag: ${LINKLIFE_ORDER_TIMEOUT_MQ_TAG:PAYMENT_TIMEOUT_CHECK}
+        consumer-group: ${LINKLIFE_ORDER_TIMEOUT_MQ_CONSUMER_GROUP:linklife-transaction-order-timeout-v1}
+        ssl-enabled: ${LINKLIFE_ORDER_TIMEOUT_MQ_SSL_ENABLED:true}
+        request-timeout: ${LINKLIFE_ORDER_TIMEOUT_MQ_REQUEST_TIMEOUT:3s}
+        consumption-thread-count: ${LINKLIFE_ORDER_TIMEOUT_MQ_CONSUMPTION_THREADS:4}
     outbox:
       enabled: ${LINKLIFE_OUTBOX_ENABLED:false}
       scan-delay-ms: ${LINKLIFE_OUTBOX_SCAN_DELAY_MS:5000}
