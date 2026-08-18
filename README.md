@@ -224,7 +224,7 @@ Shop 热点查询固定本地 JMeter 场景（50 并发线程）：
 
 ```text
 RocketMQ Java Client: 5.2.1
-RocketMQ Broker:      5.5.0（NameServer + Broker + gRPC Proxy，任务专属单节点拓扑）
+RocketMQ Broker:      5.5.0（NameServer + Broker + gRPC Proxy，本地单节点集成验证拓扑）
 ```
 
 真实主链 **4/4 PASS**：
@@ -329,7 +329,7 @@ backend/
   linklife-transaction-service/  秒杀/订单/Outbox/RocketMQ 超时
   linklife-social-service/       动态/关注/点赞
   deploy/                        本地 Compose、env example、迁移脚本
-  deploy/rocketmq-timeout-it/    任务专属单节点 RocketMQ 验证拓扑
+  deploy/rocketmq-timeout-it/    本地单节点 RocketMQ 集成验证拓扑
 
 frontend/
   Vue 3 + TypeScript + Vite 展示前端

@@ -1,6 +1,6 @@
 # LinkLife Reliability Verification
 
-四组真实故障演练基于最终 8 容器拓扑执行，验证结果如下。演练脚本与复现方式见
+多类真实故障演练基于本地验证拓扑执行，验证结果如下。演练脚本与复现方式见
 `docs/runbook.md` 与 `performance-test/stage6b/run_fault_drills.py`。
 
 ## Drill A — Gateway hotspot rate limiting

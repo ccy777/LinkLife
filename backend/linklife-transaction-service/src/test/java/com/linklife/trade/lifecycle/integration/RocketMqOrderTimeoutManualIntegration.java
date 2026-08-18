@@ -34,7 +34,7 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * 任务专属真实 MySQL/Redis/RocketMQ 5.x 手工集成验证；普通 mvn test 因隔离条件默认跳过。
+ * 本地单节点真实 MySQL/Redis/RocketMQ 5.x 手工集成验证；普通 mvn test 因隔离条件默认跳过。
  */
 @ManualIntegrationEnvironment.FullIsolationRequired
 @SpringBootTest(classes = TransactionServiceApplication.class, properties = {
@@ -55,7 +55,7 @@ import static org.assertj.core.api.Assertions.assertThat;
         "linklife.trade.order-timeout.rocketmq.endpoints=${LINKLIFE_MANUAL_ROCKETMQ_ENDPOINTS:127.0.0.1:38081}",
         "linklife.trade.order-timeout.rocketmq.topic=linklife-order-payment-timeout-it",
         "linklife.trade.order-timeout.rocketmq.tag=PAYMENT_TIMEOUT_CHECK",
-        "linklife.trade.order-timeout.rocketmq.consumer-group=linklife-codex-it-timeout-v1",
+        "linklife.trade.order-timeout.rocketmq.consumer-group=linklife-rmq-it-timeout-v1",
         "linklife.trade.order-timeout.rocketmq.ssl-enabled=false",
         "linklife.trade.order-timeout.rocketmq.request-timeout=3s"
 })

@@ -25,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ManualIntegrationEnvironment.FullIsolationRequired
 class RocketMqBrokerDownColdStartManualIntegration {
 
-    private static final Path MARKERS = Path.of("..", "..", ".codex-work", "runtime",
+    private static final Path MARKERS = Path.of("..", "..", ".linklife-local", "runtime",
             "rocketmq-delay-timeout").toAbsolutePath().normalize();
 
     @Test
@@ -104,7 +104,7 @@ class RocketMqBrokerDownColdStartManualIntegration {
                 "linklife-order-payment-timeout-it");
         properties.put("linklife.trade.order-timeout.rocketmq.tag", "PAYMENT_TIMEOUT_CHECK");
         properties.put("linklife.trade.order-timeout.rocketmq.consumer-group",
-                "linklife-codex-it-timeout-v1");
+                "linklife-rmq-it-timeout-v1");
         properties.put("linklife.trade.order-timeout.rocketmq.ssl-enabled", "false");
         properties.put("linklife.trade.order-timeout.rocketmq.request-timeout", "3s");
         return properties;

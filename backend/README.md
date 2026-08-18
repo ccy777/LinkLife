@@ -168,7 +168,7 @@ linklife.trade.order-timeout.rocketmq.consumer-group=<group>
 ```
 
 `linklife.trade.order-timeout.payment-timeout` must be a whole-second
-Duration between `1s` and `24h`. The task-owned single-node verification
+Duration between `1s` and `24h`. The isolated single-node integration
 topology lives in `backend/deploy/rocketmq-timeout-it/` (loopback ports,
 test-only empty credentials, integration runner behind a manual profile).
 It is not a production HA cluster.

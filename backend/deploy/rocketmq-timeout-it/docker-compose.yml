@@ -1,9 +1,9 @@
-name: linklife-codex-it-rmq-timeout
+name: linklife-rmq-it-timeout
 
 services:
   mysql:
     image: mysql:8.0.42
-    container_name: linklife-codex-it-rmq-timeout-mysql
+    container_name: linklife-rmq-it-timeout-mysql
     environment:
       MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
       MYSQL_DATABASE: linklife_rmq_timeout_test
@@ -15,7 +15,7 @@ services:
     ports:
       - "127.0.0.1:33316:3306"
     volumes:
-      - linklife-codex-it-rmq-timeout-mysql-data:/var/lib/mysql
+      - linklife-rmq-it-timeout-mysql-data:/var/lib/mysql
       - ../../linklife-transaction-service/src/main/resources/db/schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot"]
@@ -25,12 +25,12 @@ services:
 
   redis:
     image: redis:7.2.10
-    container_name: linklife-codex-it-rmq-timeout-redis
+    container_name: linklife-rmq-it-timeout-redis
     command: ["redis-server", "--appendonly", "yes"]
     ports:
       - "127.0.0.1:36389:6379"
     volumes:
-      - linklife-codex-it-rmq-timeout-redis-data:/data
+      - linklife-rmq-it-timeout-redis-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 3s
@@ -39,19 +39,19 @@ services:
 
   namesrv:
     image: apache/rocketmq:5.5.0
-    container_name: linklife-codex-it-rmq-timeout-namesrv
-    # 仅限任务专属单机拓扑：named volume 初始由 root 创建，确保官方镜像可初始化日志目录。
+    container_name: linklife-rmq-it-timeout-namesrv
+    # 仅限本地单机集成拓扑：named volume 初始由 root 创建，确保官方镜像可初始化日志目录。
     user: root
     command: sh mqnamesrv
     ports:
       - "127.0.0.1:39876:9876"
     volumes:
-      - linklife-codex-it-rmq-timeout-namesrv-logs:/home/rocketmq/logs
+      - linklife-rmq-it-timeout-namesrv-logs:/home/rocketmq/logs
 
   broker:
     image: apache/rocketmq:5.5.0
-    container_name: linklife-codex-it-rmq-timeout-broker
-    # 仅限任务专属单机拓扑：允许 Broker/Proxy 初始化隔离的 store/log named volumes。
+    container_name: linklife-rmq-it-timeout-broker
+    # 仅限本地单机集成拓扑：允许 Broker/Proxy 初始化隔离的 store/log named volumes。
     user: root
     depends_on:
       - namesrv
@@ -65,8 +65,8 @@ services:
     volumes:
       - ./broker.conf:/home/rocketmq/rocketmq-5.5.0/conf/linklife-broker.conf:ro
       - ./rmq-proxy.json:/home/rocketmq/rocketmq-5.5.0/conf/rmq-proxy.json:ro
-      - linklife-codex-it-rmq-timeout-broker-store:/home/rocketmq/store
-      - linklife-codex-it-rmq-timeout-broker-logs:/home/rocketmq/logs
+      - linklife-rmq-it-timeout-broker-store:/home/rocketmq/store
+      - linklife-rmq-it-timeout-broker-logs:/home/rocketmq/logs
 
   rocketmq-init:
     image: apache/rocketmq:5.5.0
@@ -79,15 +79,15 @@ services:
         admin=/home/rocketmq/rocketmq-5.5.0/bin/mqadmin
         for attempt in $$(seq 1 60); do
           if $$admin clusterList -n namesrv:9876 >/dev/null 2>&1; then
-            $$admin updateTopic -n namesrv:9876 -c linklifeCodexItCluster \
+            $$admin updateTopic -n namesrv:9876 -c linklifeRmqItCluster \
               -t linklife-order-payment-timeout-it -a +message.type=DELAY
-            $$admin updateSubGroup -n namesrv:9876 -c linklifeCodexItCluster \
-              -g linklife-codex-it-timeout-v1
+            $$admin updateSubGroup -n namesrv:9876 -c linklifeRmqItCluster \
+              -g linklife-rmq-it-timeout-v1
             exit 0
           fi
           sleep 2
         done
-        echo "task RocketMQ broker did not become ready" >&2
+        echo "RocketMQ broker did not become ready" >&2
         exit 1
 
   # Docker Desktop 不把 Linux 容器网段直接路由给 Windows 宿主机；真实 gRPC 客户端
@@ -119,18 +119,18 @@ services:
       LINKLIFE_MANUAL_ROCKETMQ_ENDPOINTS: broker:8081
     volumes:
       - ../../..:/workspace
-      - linklife-codex-it-rmq-timeout-maven-cache:/root/.m2/repository
+      - linklife-rmq-it-timeout-maven-cache:/root/.m2/repository
 
 volumes:
-  linklife-codex-it-rmq-timeout-mysql-data:
-    name: linklife-codex-it-rmq-timeout-mysql-data
-  linklife-codex-it-rmq-timeout-redis-data:
-    name: linklife-codex-it-rmq-timeout-redis-data
-  linklife-codex-it-rmq-timeout-namesrv-logs:
-    name: linklife-codex-it-rmq-timeout-namesrv-logs
-  linklife-codex-it-rmq-timeout-broker-store:
-    name: linklife-codex-it-rmq-timeout-broker-store
-  linklife-codex-it-rmq-timeout-broker-logs:
-    name: linklife-codex-it-rmq-timeout-broker-logs
-  linklife-codex-it-rmq-timeout-maven-cache:
-    name: linklife-codex-it-rmq-timeout-maven-cache
+  linklife-rmq-it-timeout-mysql-data:
+    name: linklife-rmq-it-timeout-mysql-data
+  linklife-rmq-it-timeout-redis-data:
+    name: linklife-rmq-it-timeout-redis-data
+  linklife-rmq-it-timeout-namesrv-logs:
+    name: linklife-rmq-it-timeout-namesrv-logs
+  linklife-rmq-it-timeout-broker-store:
+    name: linklife-rmq-it-timeout-broker-store
+  linklife-rmq-it-timeout-broker-logs:
+    name: linklife-rmq-it-timeout-broker-logs
+  linklife-rmq-it-timeout-maven-cache:
+    name: linklife-rmq-it-timeout-maven-cache

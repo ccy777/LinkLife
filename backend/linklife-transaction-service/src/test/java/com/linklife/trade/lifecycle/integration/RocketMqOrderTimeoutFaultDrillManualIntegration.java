@@ -30,7 +30,7 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * 任务专属真实故障演练。Broker 停启由外部编排器通过任务目录 marker 协调，
+ * 本地单节点真实故障演练。Broker 停启由外部编排器通过本地 marker 目录协调，
  * 测试本身只访问隔离的 MySQL、Redis 与 RocketMQ 资源。
  */
 @ManualIntegrationEnvironment.FullIsolationRequired
@@ -52,13 +52,13 @@ import static org.assertj.core.api.Assertions.assertThat;
         "linklife.trade.order-timeout.rocketmq.endpoints=${LINKLIFE_MANUAL_ROCKETMQ_ENDPOINTS:127.0.0.1:38081}",
         "linklife.trade.order-timeout.rocketmq.topic=linklife-order-payment-timeout-it",
         "linklife.trade.order-timeout.rocketmq.tag=PAYMENT_TIMEOUT_CHECK",
-        "linklife.trade.order-timeout.rocketmq.consumer-group=linklife-codex-it-timeout-v1",
+        "linklife.trade.order-timeout.rocketmq.consumer-group=linklife-rmq-it-timeout-v1",
         "linklife.trade.order-timeout.rocketmq.ssl-enabled=false",
         "linklife.trade.order-timeout.rocketmq.request-timeout=3s"
 })
 class RocketMqOrderTimeoutFaultDrillManualIntegration extends Stage3E017gIntegrationSupport {
 
-    private static final Path MARKERS = Path.of("..", "..", ".codex-work", "runtime",
+    private static final Path MARKERS = Path.of("..", "..", ".linklife-local", "runtime",
             "rocketmq-delay-timeout").toAbsolutePath().normalize();
 
     @Resource

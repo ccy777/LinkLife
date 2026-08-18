@@ -86,7 +86,7 @@ LINKLIFE_ROCKETMQ_ENDPOINTS=<proxy endpoint e.g. 127.0.0.1:38081>
 - 启用 MQ 时自动要求 Outbox 与 Scheduler 开关同时打开；
 - Scheduler 作为 repair/sweep fallback 与 MQ 共用 `payment_due_at` 与统一关闭 CAS。
 
-任务专属单节点验证拓扑（NameServer + Broker + gRPC Proxy + MySQL + Redis + 可选集成执行器）：
+本地单节点集成验证拓扑（NameServer + Broker + gRPC Proxy + MySQL + Redis + 可选集成执行器）：
 
 ```bat
 docker compose -f backend\deploy\rocketmq-timeout-it\docker-compose.yml up -d
@@ -127,7 +127,7 @@ for /L %i in (1,1,8) do curl -s -o NUL -w "%{http_code}\n" "http://127.0.0.1:808
 py performance-test\stage6b\run_fault_drills.py --help
 ```
 
-脚本支持四组演练：Gateway 限流、Identity 熔断恢复、Redis AOF 重启、MySQL-down 秒杀 Pending 恢复；RocketMQ 相关演练（Broker 发布中断、Consumer 停机、Broker/NameServer 重启、Broker-down 冷启动）通过任务专属拓扑与手工集成测试执行；完整结果摘要见 `docs/reliability.md`。
+脚本支持四组演练：Gateway 限流、Identity 熔断恢复、Redis AOF 重启、MySQL-down 秒杀 Pending 恢复；RocketMQ 相关演练（Broker 发布中断、Consumer 停机、Broker/NameServer 重启、Broker-down 冷启动）通过本地单节点集成拓扑与手工集成测试执行；完整结果摘要见 `docs/reliability.md`。
 
 ## Cleanup
 
