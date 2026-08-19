@@ -3,30 +3,39 @@
  * not live telemetry and not production SLA.
  */
 export const engineeringEvidence = {
-  note: '经过本地环境验证的工程证据；本地 Docker 观测，并非实时遥测。',
+  note: '经过本地双机工程验证的最终证据；并非实时遥测，不代表生产 SLA 或线上容量。',
   tests: {
     count: 1006,
     failures: 0,
     errors: 0,
     skipped: 5,
   },
-  officialBenchmarkRuns: 42,
+  officialBenchmarkRuns: 36,
   independentDatabases: 4,
   springProcesses: 5,
   transactionFlow: ['Lua 原子准入', 'Redis Stream', 'Consumer Group / PEL', 'MySQL 事务'],
   reliabilitySides: ['重试', 'DLQ', '补偿', 'Outbox', '超时关单'],
   cache: {
-    before: '≤1',
-    after: '≤0.001',
-    note: '本地测量窗口观测值',
+    title: '双机 500 并发',
+    qps: '≈17.4K',
+    p95: '36 ms',
+    p99: '45 ms',
+    before: '≈0.879',
+    after: '≈0.00013',
+    reduction: 'Redis GET 调用量降低约 99.98%',
+    note: 'Caffeine OFF → ON 对比；本地双机工程观测，不代表生产 SLA 或容量',
   },
-  seckill300: {
-    accepted: 300,
-    orders: 300,
-    distinctUsers: 300,
+  seckill1000: {
+    persistedOrders: 1000,
+    distinctUsers: 1000,
     duplicate: 0,
-    p95MedianMs: 252,
-    note: '本地 Docker 基准测试',
+    oversell: 0,
+    httpErrors: 0,
+    p95: '≈40 ms',
+    p99: '≈44 ms',
+    pel: 0,
+    dlq: 0,
+    note: '1000 unique-user burst，连续 3 轮正确性验证通过',
   },
   reliability: [
     {

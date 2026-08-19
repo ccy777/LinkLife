@@ -126,4 +126,5 @@ payment_due_at
 - 不使用 Kafka / Seata / Kubernetes / Prometheus / Grafana / SkyWalking。
 - RocketMQ 仅以 5.x 单节点开发/集成拓扑出现在 Transaction 超时链路，不是生产集群 HA，也不是跨服务总线。
 - 未做 Nacos 集群、MySQL 主从、Redis Cluster/Sentinel、网络分区演练。
-- 性能数字为单机 Docker 观测，不代表生产容量。
+- 当前公开性能数字来自双机本地工程验证：服务端与 JMeter 压测端分离，通过 1 Gbps 有线网络直连；结果用于工程对比与正确性验证，不外推为生产 SLA 或容量。
+- 早期同机 Docker/JMeter 数据仅作为历史 baseline 保留，详见 docs/performance.md。
