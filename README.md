@@ -24,7 +24,7 @@ LinkLife 从本地生活业务场景出发，把工程重心放在**秒杀准入
 | 缓存一致性 | Caffeine L1 + Redis L2 + negative cache + afterCommit 失效 + epoch fence |
 | 服务治理 | Gateway Sentinel 热点限流、Social → Identity 熔断与分级降级 |
 | 数据边界 | 4 个业务数据库、Redis ACL namespace、Gateway 可信身份头 |
-| 工程验证 | 1006 自动化测试、42 组本地 Benchmark、秒杀并发验证、真实故障演练 |
+| 工程验证 | 1006 自动化测试、双机正式压测（50/100/200/500 并发热点查询、1000 用户突发秒杀 3 轮 0 超卖 0 重复订单）、真实故障演练 |
 | 展示前端 | Vue 3 + TypeScript + Vite，中文本地生活 Demo，真实 API 联调 |
 
 ## 3. 系统架构
@@ -173,7 +173,7 @@ MySQL
 
 ## 9. 测试与工程验证
 
-LinkLife 从 **自动化回归、热点查询压测、秒杀并发验证、故障演练** 四个层次验证核心链路。以下均为本地 Docker / JMeter 环境下的工程观测值，不代表生产 SLA 或线上容量。
+LinkLife 从 **自动化回归、热点查询压测、秒杀并发验证、故障演练** 四个层次验证核心链路。自动化回归在本地 Docker 环境运行；热点查询与秒杀最终 Benchmark 使用双机正式压测（压测端与服务端分离），均为工程观测值，不代表生产 SLA 或线上容量。
 
 最终冻结版本：
 
@@ -186,37 +186,52 @@ Skipped   5
 
 覆盖微服务边界、缓存、交易可靠性、权限守卫、Schema contract、RPC 降级、Outbox 与超时链路关键异常路径。
 
-## 10. Benchmark
+## 10. 双机热点查询 Benchmark
 
-Shop 热点查询固定本地 JMeter 场景（50 并发线程）：
+最终正式 Benchmark 使用双机拓扑：服务端 A（AMD Ryzen 9 7945HX）运行 LinkLife 服务端及 Docker 依赖；压测端 B（AMD Ryzen 5 5600G）独立运行 JMeter 5.6.3 / Java 17。两机 1 Gbps 有线直连，正式测试期间链路无丢包。
 
-| 场景 | Median QPS | P95 | Redis GET / request |
-|---|---:|---:|---:|
-| Caffeine L1 关闭 | 2152.543 | 29 ms | ≈ 1 |
-| Caffeine L1 开启 | 3089.865 | 25 ms | ≈ 0.001 |
+热点查询档位：50 / 100 / 200 / 500 并发，每个档位 3 次正式 run。
 
-这是本地 measured-window 观测：关注缓存层级对 Redis 访问量和热点读路径的影响，不推导生产容量结论，也不把本地 QPS 差异包装成固定性能提升比例。
+| 并发 | Caffeine | Median QPS | P95 | P99 | Redis GET / request |
+|---|---:|---:|---:|---:|---:|
+| 50 | OFF | ≈ 12.1K | 6 ms | 8 ms | ≈ 0.935 |
+| 50 | ON | ≈ 14.3K | 5 ms | 7 ms | ≈ 0.00028 |
+| 100 | OFF | ≈ 14.4K | 11 ms | 15 ms | ≈ 0.920 |
+| 100 | ON | ≈ 17.0K | 9 ms | 13 ms | ≈ 0.00019 |
+| 200 | OFF | ≈ 15.6K | 21 ms | 30 ms | ≈ 0.913 |
+| 200 | ON | ≈ 17.2K | 17 ms | 24 ms | ≈ 0.00017 |
+| 500 | OFF | ≈ 15.6K | 40 ms | 52 ms | ≈ 0.879 |
+| 500 | ON | ≈ 17.4K | 36 ms | 45 ms | ≈ 0.00013 |
 
-## 11. 秒杀并发验证
+当前正式 headline：
 
-正式 300 unique-user burst：
+**双机 500 并发热点查询：QPS ≈ 17.4K，P95 36 ms；Caffeine ON 时 Redis GET/request ≈ 0.00013，相较 OFF（≈ 0.879）降低约 99.98%。**
+
+这些是本地双机工程观测值，**不外推生产容量或 SLA**。
+
+## 11. 双机秒杀并发验证
+
+秒杀档位：300 / 500 / 800 / 1000 unique-user burst，每档 3 次正式 run，全部 12 次运行均完成服务端一致性核对。每个档位最终均满足：Redis ordered users = 对应用户数、MySQL orders = 对应用户数、distinct users = 对应用户数、duplicate orders = 0、oversell = 0、Redis stock = 0、PEL = 0、DLQ = 0。
+
+最高正式验证档位：**1000 unique-user burst，连续 3 轮正确性验证通过**。
 
 | Metric | Result |
 |---|---:|
-| Accepted | 300 |
-| Persisted orders | 300 |
-| Distinct users | 300 |
+| Persisted orders | 1000 |
+| Distinct users | 1000 |
 | Duplicate orders | 0 |
+| Oversell | 0 |
+| HTTP errors | 0 |
+| P95 | ≈ 40 ms |
+| P99 | ≈ 44 ms |
+| PEL | 0 |
+| DLQ | 0 |
 
-3 次正式 run 的 P95：
+当前正式 headline：
 
-```text
-307 ms
-252 ms
-109 ms
-```
+**双机压测下 1000 用户突发秒杀连续 3 轮 0 超卖、0 重复订单，P95 ≈ 40 ms。**
 
-3/3 run 均未观察到 oversell 或 duplicate order。500-user 档存在客户端侧连接失败（JMeter/Windows ephemeral port 耗尽），仓库**不把该档位描述为“全部请求成功”或系统容量上限**。
+注意：这是 1000 unique-user burst 的工程验证结果，不表述为“最大支持 1000 并发”或系统容量。
 
 ## 12. RocketMQ 真实验证
 
@@ -365,4 +380,4 @@ docs/
 - Redis Cluster
 - RocketMQ 生产集群 HA
 
-这些不是为了丰富技术栈而虚构的能力。LinkLife 当前重点是把已经实现的交易、缓存、治理和可靠性链路做完整，并通过可复现测试、压测和故障演练验证其行为。所有性能与恢复数字均来自本地 Docker / JMeter 环境，仅用于工程验证。
+这些不是为了丰富技术栈而虚构的能力。LinkLife 当前重点是把已经实现的交易、缓存、治理和可靠性链路做完整，并通过可复现测试、压测和故障演练验证其行为。最终性能数字来自双机正式压测，恢复数字来自本地 Docker 演练，均仅用于工程验证，不代表生产 SLA 或线上容量。

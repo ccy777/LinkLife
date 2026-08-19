@@ -1,86 +1,91 @@
 # LinkLife Performance Benchmark (public summary)
 
-本文件是仓库冻结基准记录的公开精简版。原始逐 run 数据见
-`docs/evidence/performance-results.csv`（42 个官方 run）。
+本文档以**双机正式压测**为最终口径：压测端与服务端分离，结果用于当前 README 与简历的 Benchmark headline。项目早期另有一套同机单机 Baseline，保留在文末 [Historical single-host baseline](#historical-single-host-baseline)，仅作为历史工程验证背景，不再作为当前最终性能口径。
 
 ## Test environment
 
-- Windows 11 Home，AMD Ryzen 9 7945HX（32 逻辑核），16 GB 内存。
-- Docker Desktop 29.6.1；Java 17（Temurin）；JMeter 5.6.3；Python 3.12。
-- 8 容器本地 Compose 拓扑（mysql/redis/nacos + 4 services + gateway），业务入口仅 Gateway `127.0.0.1:8080/api/**`。
-- 未设置 per-container 资源硬限制；JMeter 与容器同机竞争 CPU。
+最终正式压测使用双机拓扑：
+
+| 机器 | 硬件 | 角色 |
+|---|---|---|
+| 服务端 A | AMD Ryzen 9 7945HX | 运行 LinkLife 服务端及 Docker 依赖 |
+| 压测端 B | AMD Ryzen 5 5600G | 独立运行 JMeter 5.6.3 / Java 17 |
+
+网络：两台电脑 1 Gbps 有线直连；正式测试期间链路无丢包。
+
+以上均为本地双机工程观测值，**不代表生产 SLA 或线上容量**。
 
 ## Methodology
 
-- Shop / ShopType：每场景 3 runs；30s warm-up + 60s measured（warm-up 不计入）；汇总用 3 runs median，并给出 min/max/CV。
-- Blog Hot / Seckill：使用冻结的原始 JTL 重新分析（未重发流量）。
-- throughput duration = `max(timeStamp + elapsed) - min(timeStamp)`。
-- Redis 统计仅计 measured window 的 INFO commandstats delta，并记录同长无流量背景窗。
-- 42 个官方 run：Shop（18）+ ShopType（6）+ Blog Hot（9）+ Seckill（9）。
+- 热点查询：50 / 100 / 200 / 500 并发档位，每个 profile（Caffeine OFF / ON）、每个档位 3 次正式 run。
+- 秒杀：300 / 500 / 800 / 1000 unique-user burst，每档 3 次正式 run；全部 12 次正式运行均完成服务端一致性核对（Redis ordered users、MySQL orders、distinct users、duplicate orders、oversell、Redis stock、PEL、DLQ）。
+- 每个 profile、每个档位的汇总值采用 3 次正式 run 的结果。
+- Redis GET / request 用于对比 Caffeine 开启前后对 Redis 访问量的影响。
 
-## Headline observations
+## Hot-query benchmark
 
-| observation | value |
-|---|---|
-| Shop measured-window Redis GET/request | OFF ≈ 1.0；ON ≈ 0.001（Caffeine L1 命中后） |
-| ShopType measured-window Redis GET/request | OFF ≈ 1.0；ON ≈ 0.0001 |
-| 100-user seckill burst | accepted=100/run，orders=100，distinct=100，duplicate=0，3/3 correctness |
-| 300-user seckill burst | accepted=300/run，orders=300，distinct=300，duplicate=0，median P95=252 ms |
-| Blog Hot（25/50/100 threads） | 无 429、无 5xx（基准 profile 关闭 Gateway 限流） |
+Shop 热点查询双机正式结果（3 次正式 run / profile / 档位）：
 
-### Shop detail median QPS / P95（local Docker, client-limited）
+| concurrency | Caffeine | median QPS | P95 | P99 | Redis GET / request |
+|---|---:|---:|---:|---:|---:|
+| 50 | OFF | ≈ 12.1K | 6 ms | 8 ms | ≈ 0.935 |
+| 50 | ON | ≈ 14.3K | 5 ms | 7 ms | ≈ 0.00028 |
+| 100 | OFF | ≈ 14.4K | 11 ms | 15 ms | ≈ 0.920 |
+| 100 | ON | ≈ 17.0K | 9 ms | 13 ms | ≈ 0.00019 |
+| 200 | OFF | ≈ 15.6K | 21 ms | 30 ms | ≈ 0.913 |
+| 200 | ON | ≈ 17.2K | 17 ms | 24 ms | ≈ 0.00017 |
+| 500 | OFF | ≈ 15.6K | 40 ms | 52 ms | ≈ 0.879 |
+| 500 | ON | ≈ 17.4K | 36 ms | 45 ms | ≈ 0.00013 |
 
-| threads | profile | median QPS | median P95 ms |
-|---|---:|---:|---:|
-| 50 | off | 2152.543 | 29 |
-| 50 | on | 3089.865 | 25 |
-| 100 | off | 2588.953 | 49 |
-| 100 | on | 6956.710 | 30 |
-| 200 | off | 5653.058 | 58 |
-| 200 | on | 2928.941 | 69 |
+正式 headline：
 
-### ShopType list（100 threads）
+**双机 500 并发热点查询：QPS ≈ 17.4K，P95 36 ms；Caffeine ON 时 Redis GET/request ≈ 0.00013，相较 OFF（≈ 0.879）降低约 99.98%，即 (0.879 - 0.00013) / 0.879 ≈ 99.98%。**
 
-| profile | median QPS | median P95 ms |
-|---|---:|---:|
-| off | 2670.365 | 46 |
-| on | 3015.987 | 38 |
+## Seckill correctness
 
-### Blog Hot（median）
+秒杀档位：300 / 500 / 800 / 1000 unique-user burst，每档 3 次正式 run。每个档位最终均满足：
 
-| threads | median QPS | median P95 ms |
-|---|---:|---:|
-| 25 | 910.235 | 37 |
-| 50 | 1797.147 | 48 |
-| 100 | 1271.735 | 114 |
+- Redis ordered users = 对应用户数
+- MySQL orders = 对应用户数
+- distinct users = 对应用户数
+- duplicate orders = 0
+- oversell = 0
+- Redis stock = 0
+- PEL = 0
+- DLQ = 0
 
-### Seckill burst（correctness）
+最高正式验证档位：**1000 unique-user burst，连续 3 轮**：
 
-| users | accepted | orders | distinct | duplicates | correctness |
-|---|---:|---:|---:|---:|---|
-| 100 | 100/100/100 | 100 | 100 | 0 | pass |
-| 300 | 300/300/300 | 300 | 300 | 0 | pass |
-| 500 | 432/493/483 | 432/493/483 | same | 0 | pass (client failures) |
+| Metric | Result |
+|---|---:|
+| Persisted orders | 1000 |
+| Distinct users | 1000 |
+| Duplicate orders | 0 |
+| Oversell | 0 |
+| HTTP errors | 0 |
+| P95 | ≈ 40 ms |
+| P99 | ≈ 44 ms |
+| PEL | 0 |
+| DLQ | 0 |
 
-## Client-limited caveat
+正式 headline：
 
-绝大多数 run 中 host CPU 接近饱和（>95%），QPS/P95 属 client-limited 观测：JMeter 与容器同机竞争 CPU，且 QPS 波动大（CV 高）。这些数字只用于描述本机可复现基准，不用于容量/SLA 结论。
+**双机压测下 1000 用户突发秒杀连续 3 轮 0 超卖、0 重复订单，P95 ≈ 40 ms。**
 
-## 500-user client failures
+## Usage boundary
 
-500-user seckill run 存在客户端侧连接失败（JMeter/Windows ephemeral port exhaustion，请求未到达 Gateway）：r1=68、r2=7、r3=17。因此不得表述为“500 用户全部成功”；正确性判断仅基于实际到达并被接受的请求。
+- 以上结果来自本地双机工程压测，是工程观测值，**不代表生产 SLA、最大容量或线上流量**。
+- “1000 unique-user burst”仅描述该验证档位，不表述为“最大支持 1000 并发”“1000 TPS”“系统容量为 1000”或“1000 请求同一毫秒”。
+- QPS、P95/P99 与 Redis GET 对比仅用于描述该双机环境的实测表现，不外推生产容量结论。
 
-## Usable vs not usable
+## Historical single-host baseline
 
-可用于结论：
+项目早期曾使用同机 Docker + JMeter 做 Benchmark：JMeter 与 Docker 服务端运行在同一台机器（Windows 11 Home，AMD Ryzen 9 7945HX，16 GB 内存，Docker Desktop 29.6.1），两者竞争 CPU，因此多数 run 为 client-limited 观测。原始逐 run 数据见 `docs/evidence/performance-results.csv`（42 个官方 run）。
 
-- measured-window 下 Caffeine 将 Shop 的 Redis GET/request 从约 1 降至约 0.001。
-- 100/300-user burst 中未观察到超卖或重复订单（3/3 runs correctness）。
-- 42 个 run 的吞吐/延迟为可复现的本机观测。
+代表性历史数据：
 
-不可用于结论：
+- 50 并发 Shop Caffeine ON：Median QPS 3089.865，P95 25 ms，Redis GET/request ≈ 0.001；
+- 300-user 秒杀：3/3 correctness，3 次正式 run 的 P95 为 307 / 252 / 109 ms；
+- 500-user 档存在客户端侧连接失败（JMeter/Windows ephemeral port 耗尽），不得表述为“500 用户全部成功”。
 
-- 任何绝对 QPS/SLA/容量表述（client-limited）。
-- “性能提升 X%”（QPS 波动大，部分 profile 反直觉）。
-- 500-user“全部成功”表述。
-- 生产规模或在线流量的外推。
+这些旧单机结果保留为历史工程验证背景，**不再作为当前 README 和简历的最终性能口径**；最终口径以本文档上文的双机正式压测为准。
