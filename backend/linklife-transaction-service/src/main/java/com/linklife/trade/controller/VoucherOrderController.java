@@ -62,7 +62,7 @@ public class VoucherOrderController {
         if (orderId == null || orderId <= 0) {
             return Result.fail("参数错误：orderId 必须大于 0");
         }
-        return Result.ok(orderLifecycleService.cancelByCurrentUser(orderId));
+        return Result.ok(String.valueOf(orderLifecycleService.cancelByCurrentUser(orderId)));
     }
 
     @GetMapping("submissions/{orderId}")

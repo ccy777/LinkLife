@@ -50,6 +50,10 @@
           </el-steps>
         </div>
 
+        <p v-if="orderId" class="submission__order-id">
+          订单号 {{ orderId }}
+        </p>
+
         <el-alert
           v-if="state === 'FAILED'"
           type="error"
@@ -110,7 +114,7 @@ defineEmits<{
 }>()
 
 const router = useRouter()
-const orderId = ref<number | null>(null)
+const orderId = ref<string | null>(null)
 const admitting = ref(false)
 const admissionError = ref<string | null>(null)
 const submission = ref<OrderSubmission | null>(null)
@@ -216,6 +220,14 @@ onBeforeUnmount(stopPolling)
   margin: 0;
   font-size: 13px;
   color: var(--ll-text-secondary);
+}
+
+.submission__order-id {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ll-text);
+  word-break: break-all;
 }
 
 .submission__actions {

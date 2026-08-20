@@ -74,7 +74,8 @@ export interface BlogLikeUser {
 }
 
 export interface Order {
-  id: number
+  /** 18-digit snowflake id; backend serializes it as a JSON string. */
+  id: string
   userId: number
   voucherId: number
   payType: number
@@ -96,7 +97,9 @@ export interface PageResult<T> {
 export type SubmissionState = 'ACCEPTED' | 'PROCESSING' | 'PERSISTED' | 'FAILED' | 'UNKNOWN'
 
 export interface OrderSubmission {
+  /** 18-digit snowflake id; backend serializes it as a JSON string. */
+  orderId: string
   state: SubmissionState
   message?: string
-  updatedAt?: string
+  updatedAt?: number
 }

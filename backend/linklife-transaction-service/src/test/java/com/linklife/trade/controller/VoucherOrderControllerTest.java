@@ -61,23 +61,23 @@ class VoucherOrderControllerTest {
     }
 
     @Test
-    void postSeckillContractUnchanged() throws Exception {
-        when(voucherOrderService.seckillVoucher(10L)).thenReturn(Result.ok(999L));
+    void postSeckillReturnsOrderIdAsJsonString() throws Exception {
+        when(voucherOrderService.seckillVoucher(10L)).thenReturn(Result.ok("999"));
 
         mockMvc.perform(post("/voucher-order/seckill/10"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data").value(999));
+                .andExpect(jsonPath("$.data").value("999"));
     }
 
     @Test
-    void cancelOrderReturnsOrderId() throws Exception {
+    void cancelOrderReturnsOrderIdAsJsonString() throws Exception {
         when(orderLifecycleService.cancelByCurrentUser(1001L)).thenReturn(1001L);
 
         mockMvc.perform(post("/voucher-order/1001/cancel"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data").value(1001));
+                .andExpect(jsonPath("$.data").value("1001"));
 
         verify(orderLifecycleService).cancelByCurrentUser(1001L);
     }
@@ -121,15 +121,15 @@ class VoucherOrderControllerTest {
 
     @Test
     void cancelPathReachesLifecycleOnlyAndStaticPostStillRoutesToSeckill() throws Exception {
-        when(voucherOrderService.seckillVoucher(10L)).thenReturn(Result.ok(999L));
+        when(voucherOrderService.seckillVoucher(10L)).thenReturn(Result.ok("999"));
         when(orderLifecycleService.cancelByCurrentUser(7L)).thenReturn(7L);
 
         mockMvc.perform(post("/voucher-order/seckill/10"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data").value(999));
+                .andExpect(jsonPath("$.data").value("999"));
         mockMvc.perform(post("/voucher-order/7/cancel"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data").value(7));
+                .andExpect(jsonPath("$.data").value("7"));
 
         verify(voucherOrderService).seckillVoucher(10L);
         verify(orderLifecycleService).cancelByCurrentUser(7L);
@@ -147,9 +147,32 @@ class VoucherOrderControllerTest {
         mockMvc.perform(get("/voucher-order/submissions/1001"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.orderId").value("1001"))
                 .andExpect(jsonPath("$.data.state").value("ACCEPTED"))
                 .andExpect(jsonPath("$.data.message").value("订单已受理，等待处理"))
                 .andExpect(jsonPath("$.data.updatedAt").value(123));
+    }
+
+    @Test
+    void snowflakeOrderIdsSerializeAsExactJsonStrings() throws Exception {
+        long snowflake = 628143678619123717L;
+        when(submissionStatusService.getSubmissionStatus(snowflake))
+                .thenReturn(new OrderSubmissionStatusDTO(snowflake, OrderSubmissionState.PERSISTED,
+                        "订单已确认落库", 1787246297118L));
+        VoucherOrderDTO dto = new VoucherOrderDTO();
+        dto.setId(snowflake);
+        dto.setVoucherId(12L);
+        dto.setStatus(4);
+        when(orderQueryService.getOrder(snowflake)).thenReturn(dto);
+
+        mockMvc.perform(get("/voucher-order/submissions/" + snowflake))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.orderId").value("628143678619123717"))
+                .andExpect(jsonPath("$.data.state").value("PERSISTED"));
+        mockMvc.perform(get("/voucher-order/" + snowflake))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value("628143678619123717"))
+                .andExpect(jsonPath("$.data.voucherId").value(12));
     }
 
     @Test
@@ -176,7 +199,7 @@ class VoucherOrderControllerTest {
         mockMvc.perform(get("/voucher-order/1001"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data.id").value(1001))
+                .andExpect(jsonPath("$.data.id").value("1001"))
                 .andExpect(jsonPath("$.data.voucherId").value(2));
     }
 

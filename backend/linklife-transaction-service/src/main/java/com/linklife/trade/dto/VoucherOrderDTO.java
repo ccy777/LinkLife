@@ -1,6 +1,8 @@
 package com.linklife.trade.dto;
 
 import com.linklife.trade.entity.VoucherOrder;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -14,6 +16,8 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 public class VoucherOrderDTO {
+    /** 18-digit snowflake id; serialize as JSON string so JavaScript keeps exact digits. */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long id;
     private Long voucherId;
     private Integer payType;
