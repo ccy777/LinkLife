@@ -27,6 +27,42 @@ LinkLife 从本地生活业务场景出发，把工程重心放在**秒杀准入
 | 工程验证 | 1006 自动化测试、双机正式压测（50/100/200/500 并发热点查询、1000 用户突发秒杀 3 轮 0 超卖 0 重复订单）、真实故障演练 |
 | 展示前端 | Vue 3 + TypeScript + Vite，中文本地生活 Demo，真实 API 联调 |
 
+## 真实运行演示
+
+以下截图全部来自真实 Vue 页面，请求经 Vite → Gateway → Merchant / Transaction 完整链路，非静态 Mock。
+
+### 真实产品页面
+
+![LinkLife 商户详情](docs/assets/demo/shop-detail.png)
+
+真实 Vue 商户详情页：通过 Gateway 调用 Merchant（商户信息）与 Transaction（优惠券列表），展示拾光咖啡的地址、营业时间、评分、销量、人均，以及秒杀券的实时剩余库存与“立即抢购”入口。
+
+### 秒杀异步落库
+
+![秒杀订单真实落库](docs/assets/demo/seckill-persisted.png)
+
+点击“立即抢购”后，请求经 Vite → Gateway → Transaction，由 Redis Lua 原子准入，Redis Stream Consumer Group 异步落库；页面轮询到 PERSISTED 后才展示“订单已落库”。
+
+### 未支付订单可靠关闭
+
+![订单待支付](docs/assets/demo/order-unpaid.png)
+
+![订单自动取消](docs/assets/demo/order-canceled.png)
+
+同一订单从 UNPAID → CANCELED：Local Outbox + RocketMQ 定时消息主动触发，Scheduler 扫描兜底；`UNPAID → CANCELED` MySQL CAS 保证库存补偿只执行一次。
+
+### Benchmark 摘要
+
+上表仅摘录正式双机测试结论，完整环境、JTL/CSV、复算方法及故障演练见性能与可靠性文档。
+
+| 场景 | 正式口径 | 结果 |
+|---|---|---|
+| 热点查询 | 双机，500 concurrency | QPS ≈ 17.4K，P95 = 36 ms |
+| 两级缓存 | Redis GET/request | OFF ≈ 0.879，ON ≈ 0.00013，下降约 99.98% |
+| 秒杀 | 1000 unique-user burst，连续 3 轮 | 0 oversell，0 duplicate orders，P95 ≈ 40 ms |
+
+正式证据：[docs/performance.md](docs/performance.md) · [docs/reliability.md](docs/reliability.md)
+
 ## 3. 系统架构
 
 ```mermaid
