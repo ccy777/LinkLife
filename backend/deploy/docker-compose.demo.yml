@@ -70,16 +70,46 @@ services:
         admin=/home/rocketmq/rocketmq-5.5.0/bin/mqadmin
         for attempt in $$(seq 1 60); do
           if $$admin clusterList -n namesrv:9876 >/dev/null 2>&1; then
-            $$admin updateTopic -n namesrv:9876 -c linklifeRmqItCluster \
-              -t linklife-order-payment-timeout-demo -a +message.type=DELAY
-            $$admin updateSubGroup -n namesrv:9876 -c linklifeRmqItCluster \
-              -g linklife-transaction-order-timeout-demo-v1
-            exit 0
+            break
           fi
           sleep 2
         done
-        echo "RocketMQ broker did not become ready" >&2
-        exit 1
+        if ! $$admin clusterList -n namesrv:9876 >/dev/null 2>&1; then
+          echo "RocketMQ broker did not become ready" >&2
+          exit 1
+        fi
+        topic=linklife-order-payment-timeout-demo
+        for attempt in $$(seq 1 15); do
+          if $$admin updateTopic -n namesrv:9876 -b broker:10911 \
+              -t $$topic -a +message.type=DELAY >/dev/null 2>&1; then
+            break
+          fi
+          sleep 2
+        done
+        for attempt in $$(seq 1 10); do
+          if $$admin topicList -n namesrv:9876 2>/dev/null | grep -qx "$$topic"; then
+            break
+          fi
+          sleep 2
+        done
+        if ! $$admin topicList -n namesrv:9876 2>/dev/null | grep -qx "$$topic"; then
+          echo "RocketMQ demo topic was not created: $$topic" >&2
+          exit 1
+        fi
+        group=linklife-transaction-order-timeout-demo-v1
+        for attempt in $$(seq 1 15); do
+          if $$admin updateSubGroup -n namesrv:9876 -b broker:10911 \
+              -g $$group >/dev/null 2>&1; then
+            break
+          fi
+          sleep 2
+        done
+        if ! $$admin updateSubGroup -n namesrv:9876 -b broker:10911 \
+            -g $$group >/dev/null 2>&1; then
+          echo "RocketMQ demo subscription group was not created: $$group" >&2
+          exit 1
+        fi
+        echo "RocketMQ demo topic and group ready"
     networks:
       - linklife-stage4-net
 
