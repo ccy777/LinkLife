@@ -9,6 +9,7 @@ import com.linklife.trade.lifecycle.outbox.OutboxEventStatus;
 import com.linklife.trade.lifecycle.outbox.OutboxHandleResult;
 import com.linklife.trade.lifecycle.outbox.OutboxPollResult;
 import com.linklife.trade.lifecycle.outbox.OutboxProperties;
+import com.linklife.trade.lifecycle.timeout.OrderTimeoutProperties;
 import com.linklife.trade.mapper.OutboxEventMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,10 +55,14 @@ public class OutboxPollingService {
     @Resource
     private OutboxEventHandler outboxEventHandler;
 
+    /** Shared business zone for persisted LocalDateTime Outbox fields. */
+    @Resource
+    private OrderTimeoutProperties orderTimeoutProperties = new OrderTimeoutProperties();
+
     /**
      * 可测试时间源：默认系统时钟，测试通过注入固定 Clock 验证确定的 scanNow/租约/退避。
      */
-    private Clock clock = Clock.systemDefaultZone();
+    private Clock clock;
 
     /**
      * 执行一轮 Outbox 轮询。
@@ -393,7 +398,8 @@ public class OutboxPollingService {
         // tb_outbox_event 时间字段为秒级 datetime：统一截断到秒，
         // 保证写入 Wrapper 的 lockedUntil/processingStartedTime/updatedTime/completedTime/nextRetryTime
         // 均为 nano==0，与数据库持久化精度一致。
-        return LocalDateTime.now(clock).truncatedTo(ChronoUnit.SECONDS);
+        Clock effectiveClock = clock == null ? Clock.system(orderTimeoutProperties.getZoneId()) : clock;
+        return LocalDateTime.now(effectiveClock).truncatedTo(ChronoUnit.SECONDS);
     }
 
     private enum Outcome {

@@ -12,9 +12,12 @@ import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.TimeZone;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -76,9 +79,9 @@ class SeckillVoucherCreatedOutboxEventHandlerTest {
         voucher.setVoucherId(100L);
         voucher.setStock(currentStock);
         voucher.setBeginTime(LocalDateTime.ofInstant(
-                java.time.Instant.ofEpochMilli(BEGIN_MILLIS), java.time.ZoneId.systemDefault()));
+                java.time.Instant.ofEpochMilli(BEGIN_MILLIS), ZoneId.of("Asia/Shanghai")));
         voucher.setEndTime(LocalDateTime.ofInstant(
-                java.time.Instant.ofEpochMilli(END_MILLIS), java.time.ZoneId.systemDefault()));
+                java.time.Instant.ofEpochMilli(END_MILLIS), ZoneId.of("Asia/Shanghai")));
         return voucher;
     }
 
@@ -94,6 +97,48 @@ class SeckillVoucherCreatedOutboxEventHandlerTest {
 
         assertThat(handler.handle(validEvent())).isEqualTo(OutboxHandleResult.success());
         verify(initializeAdapter).initialize(any(SeckillVoucherInitializeCommand.class));
+    }
+
+    @Test
+    void mysqlVoucherEpochValidationUsesBusinessZoneRegardlessOfJvmDefaultZone() {
+        TimeZone original = TimeZone.getDefault();
+        try {
+            LocalDateTime beginTime = LocalDateTime.of(2026, 8, 6, 10, 0);
+            LocalDateTime endTime = beginTime.plusHours(2);
+            long beginEpoch = beginTime.atZone(ZoneId.of("Asia/Shanghai")).toInstant().toEpochMilli();
+            long endEpoch = endTime.atZone(ZoneId.of("Asia/Shanghai")).toInstant().toEpochMilli();
+            SeckillVoucher voucher = new SeckillVoucher();
+            voucher.setVoucherId(100L);
+            voucher.setStock(10);
+            voucher.setBeginTime(beginTime);
+            voucher.setEndTime(endTime);
+            when(seckillVoucherService.getById(100L)).thenReturn(voucher);
+            stubSuccessInit();
+            OutboxEvent event = validEvent();
+            event.setPayload(payloadJson("event-1", 1, 100L, 10, beginEpoch, endEpoch, beginTime));
+
+            TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
+            SeckillVoucherInitializeCommand utcCommand = handleAndCaptureCommand(event);
+
+            TimeZone.setDefault(TimeZone.getTimeZone("Asia/Shanghai"));
+            SeckillVoucherInitializeCommand shanghaiCommand = handleAndCaptureCommand(event);
+
+            assertThat(utcCommand.beginEpochMillis()).isEqualTo(shanghaiCommand.beginEpochMillis());
+            assertThat(utcCommand.endEpochMillis()).isEqualTo(shanghaiCommand.endEpochMillis());
+            assertThat(utcCommand.beginEpochMillis()).isEqualTo(beginEpoch);
+            assertThat(utcCommand.endEpochMillis()).isEqualTo(endEpoch);
+        } finally {
+            TimeZone.setDefault(original);
+        }
+    }
+
+    private SeckillVoucherInitializeCommand handleAndCaptureCommand(OutboxEvent event) {
+        assertThat(handler.handle(event)).isEqualTo(OutboxHandleResult.success());
+        org.mockito.ArgumentCaptor<SeckillVoucherInitializeCommand> captor =
+                org.mockito.ArgumentCaptor.forClass(SeckillVoucherInitializeCommand.class);
+        verify(initializeAdapter).initialize(captor.capture());
+        clearInvocations(initializeAdapter);
+        return captor.getValue();
     }
 
     @Test

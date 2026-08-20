@@ -1,6 +1,7 @@
 package com.linklife.trade.lifecycle.outbox;
 
 import com.linklife.trade.application.OutboxPollingService;
+import com.linklife.trade.lifecycle.timeout.OrderTimeoutProperties;
 import com.linklife.promotion.service.ISeckillVoucherService;
 import com.linklife.trade.mapper.VoucherOrderMapper;
 import com.linklife.trade.mapper.OutboxEventMapper;
@@ -184,6 +185,7 @@ class OutboxSchedulerTest {
                 .withUserConfiguration(OutboxTestConfig.class)
                 .withBean(OutboxEventMapper.class, () -> mock(OutboxEventMapper.class))
                 .withBean(OutboxProperties.class, OutboxProperties::new)
+                .withBean(OrderTimeoutProperties.class, OrderTimeoutProperties::new)
                 .withBean(OutboxEventHandler.class, () -> mock(OutboxEventHandler.class))
                 .withPropertyValues(
                         "linklife.trade.outbox.enabled=true",
@@ -209,6 +211,7 @@ class OutboxSchedulerTest {
                     return mapper;
                 })
                 .withBean(OutboxProperties.class, OutboxProperties::new)
+                .withBean(OrderTimeoutProperties.class, OrderTimeoutProperties::new)
                 .withPropertyValues(
                         "linklife.trade.outbox.enabled=true",
                         "linklife.trade.outbox.scan-delay-ms=5000",
