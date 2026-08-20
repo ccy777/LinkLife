@@ -54,7 +54,7 @@ const current = ref(1)
 const total = ref(0)
 const loading = ref(true)
 const loadingMore = ref(false)
-const cancelingId = ref<number | null>(null)
+const cancelingId = ref<string | null>(null)
 const error = ref('')
 
 const hasMore = computed(() => orders.value.length < total.value)

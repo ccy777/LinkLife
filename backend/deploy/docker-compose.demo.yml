@@ -1,0 +1,130 @@
+# Explicit opt-in overlay for the short, local README demo flow.
+# Usage (PowerShell):
+#   docker compose --env-file .env -f backend/deploy/docker-compose.stage4.yml -f backend/deploy/docker-compose.demo.yml up -d --build
+#
+# The base Stage4 Compose file remains the default runtime. This overlay only
+# changes host exposure and Transaction runtime variables when it is explicitly
+# supplied on the command line.
+services:
+  gateway:
+    ports: !override
+      - "127.0.0.1:18080:8080"
+
+  transaction-service:
+    environment:
+      # Freeze a short per-order due time for the local demo only.
+      LINKLIFE_ORDER_PAYMENT_TIMEOUT: "45s"
+      # Exercise the existing Local Outbox -> RocketMQ timeout trigger.
+      LINKLIFE_ORDER_TIMEOUT_MQ_ENABLED: "true"
+      LINKLIFE_ROCKETMQ_ENDPOINTS: "broker:8081"
+      LINKLIFE_ORDER_TIMEOUT_MQ_TOPIC: "linklife-order-payment-timeout-demo"
+      LINKLIFE_ORDER_TIMEOUT_MQ_TAG: "PAYMENT_TIMEOUT_CHECK"
+      LINKLIFE_ORDER_TIMEOUT_MQ_CONSUMER_GROUP: "linklife-transaction-order-timeout-demo-v1"
+      LINKLIFE_ORDER_TIMEOUT_MQ_SSL_ENABLED: "false"
+      # Publish timeout intents promptly. Keep the repair scheduler enabled,
+      # but postpone its first sweep so a healthy demo uses the MQ main path.
+      LINKLIFE_OUTBOX_INITIAL_DELAY_MS: "0"
+      LINKLIFE_OUTBOX_SCAN_DELAY_MS: "1000"
+      LINKLIFE_ORDER_TIMEOUT_INITIAL_DELAY_MS: "120000"
+      LINKLIFE_ORDER_TIMEOUT_SCAN_DELAY_MS: "60000"
+    depends_on:
+      rocketmq-init:
+        condition: service_completed_successfully
+
+  namesrv:
+    image: apache/rocketmq:5.5.0
+    container_name: linklife-demo-namesrv
+    user: root
+    command: sh mqnamesrv
+    volumes:
+      - linklife-demo-namesrv-logs:/home/rocketmq/logs
+    networks:
+      - linklife-stage4-net
+
+  broker:
+    image: apache/rocketmq:5.5.0
+    container_name: linklife-demo-broker
+    user: root
+    depends_on:
+      - namesrv
+    environment:
+      NAMESRV_ADDR: namesrv:9876
+    command: sh mqbroker --enable-proxy -c /home/rocketmq/rocketmq-5.5.0/conf/linklife-broker.conf
+    volumes:
+      - ./rocketmq-timeout-it/broker.conf:/home/rocketmq/rocketmq-5.5.0/conf/linklife-broker.conf:ro
+      - ./rocketmq-timeout-it/rmq-proxy.json:/home/rocketmq/rocketmq-5.5.0/conf/rmq-proxy.json:ro
+      - linklife-demo-broker-store:/home/rocketmq/store
+      - linklife-demo-broker-logs:/home/rocketmq/logs
+    networks:
+      - linklife-stage4-net
+
+  rocketmq-init:
+    image: apache/rocketmq:5.5.0
+    container_name: linklife-demo-rocketmq-init
+    depends_on:
+      - namesrv
+      - broker
+    entrypoint: ["sh", "-ec"]
+    command:
+      - |
+        admin=/home/rocketmq/rocketmq-5.5.0/bin/mqadmin
+        for attempt in $$(seq 1 60); do
+          if $$admin clusterList -n namesrv:9876 >/dev/null 2>&1; then
+            break
+          fi
+          sleep 2
+        done
+        if ! $$admin clusterList -n namesrv:9876 >/dev/null 2>&1; then
+          echo "RocketMQ broker did not become ready" >&2
+          exit 1
+        fi
+        topic=linklife-order-payment-timeout-demo
+        for attempt in $$(seq 1 15); do
+          if $$admin updateTopic -n namesrv:9876 -b broker:10911 \
+              -t $$topic -a +message.type=DELAY >/dev/null 2>&1; then
+            break
+          fi
+          sleep 2
+        done
+        for attempt in $$(seq 1 10); do
+          if $$admin topicList -n namesrv:9876 2>/dev/null | grep -qx "$$topic"; then
+            break
+          fi
+          sleep 2
+        done
+        if ! $$admin topicList -n namesrv:9876 2>/dev/null | grep -qx "$$topic"; then
+          echo "RocketMQ demo topic was not created: $$topic" >&2
+          exit 1
+        fi
+        group=linklife-transaction-order-timeout-demo-v1
+        for attempt in $$(seq 1 15); do
+          if $$admin updateSubGroup -n namesrv:9876 -b broker:10911 \
+              -g $$group >/dev/null 2>&1; then
+            break
+          fi
+          sleep 2
+        done
+        if ! $$admin updateSubGroup -n namesrv:9876 -b broker:10911 \
+            -g $$group >/dev/null 2>&1; then
+          echo "RocketMQ demo subscription group was not created: $$group" >&2
+          exit 1
+        fi
+        echo "RocketMQ demo topic and group ready"
+    networks:
+      - linklife-stage4-net
+
+volumes:
+  # Do not reuse a developer's Stage4 volumes: their local credentials and
+  # order data may predate this opt-in demo invocation.
+  mysql_data:
+    name: linklife_demo_mysql_data
+  redis_data:
+    name: linklife_demo_redis_data
+  merchant_uploads:
+    name: linklife_demo_merchant_uploads
+  linklife-demo-namesrv-logs:
+    name: linklife_demo_namesrv_logs
+  linklife-demo-broker-store:
+    name: linklife_demo_broker_store
+  linklife-demo-broker-logs:
+    name: linklife_demo_broker_logs

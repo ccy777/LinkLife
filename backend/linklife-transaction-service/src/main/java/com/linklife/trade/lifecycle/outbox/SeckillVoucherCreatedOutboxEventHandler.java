@@ -4,13 +4,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.linklife.promotion.service.ISeckillVoucherService;
 import com.linklife.shared.event.SeckillVoucherCreatedEventPayload;
 import com.linklife.trade.entity.OutboxEvent;
+import com.linklife.trade.lifecycle.timeout.OrderTimeoutProperties;
 import jakarta.annotation.Resource;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 
 /**
@@ -39,6 +39,8 @@ public class SeckillVoucherCreatedOutboxEventHandler implements OutboxBusinessHa
 
     @Resource
     private SeckillVoucherInitializeAdapter initializeAdapter;
+    @Resource
+    private OrderTimeoutProperties orderTimeoutProperties = new OrderTimeoutProperties();
 
     @Override
     public String eventType() {
@@ -76,7 +78,8 @@ public class SeckillVoucherCreatedOutboxEventHandler implements OutboxBusinessHa
             return OutboxHandleResult.fatal(dbError);
         }
 
-        LocalDateTime handledAt = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS);
+        LocalDateTime handledAt = LocalDateTime.now(orderTimeoutProperties.getZoneId())
+                .truncatedTo(ChronoUnit.SECONDS);
         SeckillVoucherInitializeCommand command = new SeckillVoucherInitializeCommand(
                 payload.voucherId(), payload.initialStock(),
                 payload.beginEpochMillis(), payload.endEpochMillis(),
@@ -161,9 +164,9 @@ public class SeckillVoucherCreatedOutboxEventHandler implements OutboxBusinessHa
                 return "SECKILL_TIME_MISMATCH";
             }
             long beginMillis = voucher.getBeginTime()
-                    .atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+                    .atZone(orderTimeoutProperties.getZoneId()).toInstant().toEpochMilli();
             long endMillis = voucher.getEndTime()
-                    .atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+                    .atZone(orderTimeoutProperties.getZoneId()).toInstant().toEpochMilli();
             if (beginMillis != payload.beginEpochMillis() || endMillis != payload.endEpochMillis()) {
                 return "SECKILL_TIME_MISMATCH";
             }

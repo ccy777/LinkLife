@@ -13,7 +13,7 @@ set -euo pipefail
 : "${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD required}"
 
 run_root_mysql() {
-  mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" "$@"
+  mysql --default-character-set=utf8mb4 -uroot -p"${MYSQL_ROOT_PASSWORD}" "$@"
 }
 
 for db in linklife_identity linklife_merchant linklife_transaction linklife_social; do

@@ -12,12 +12,12 @@ import com.linklife.promotion.entity.Voucher;
 import com.linklife.promotion.mapper.VoucherMapper;
 import com.linklife.promotion.service.ISeckillVoucherService;
 import com.linklife.promotion.service.IVoucherService;
+import com.linklife.trade.lifecycle.timeout.OrderTimeoutProperties;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import jakarta.annotation.Resource;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 
@@ -38,6 +38,8 @@ public class VoucherServiceImpl extends ServiceImpl<VoucherMapper, Voucher> impl
     private OutboxPublisher outboxPublisher;
     @Resource
     private ObjectMapper objectMapper;
+    @Resource
+    private OrderTimeoutProperties orderTimeoutProperties = new OrderTimeoutProperties();
 
     private static final String OUTBOX_AGGREGATE_TYPE = "SECKILL_VOUCHER";
     private static final String OUTBOX_EVENT_TYPE = "SECKILL_VOUCHER_CREATED";
@@ -91,14 +93,15 @@ public class VoucherServiceImpl extends ServiceImpl<VoucherMapper, Voucher> impl
         // 可靠初始化边界：同一 MySQL 本地事务内插入唯一 SECKILL_VOUCHER_CREATED Outbox，
         // Redis 初始化由 Outbox 驱动；本方法不再直接操作 Redis。
         String eventId = UUID.randomUUID().toString();
-        LocalDateTime now = LocalDateTime.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
+        LocalDateTime now = LocalDateTime.now(orderTimeoutProperties.getZoneId())
+                .truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
         SeckillVoucherCreatedEventPayload payload = new SeckillVoucherCreatedEventPayload(
                 eventId,
                 OUTBOX_EVENT_VERSION,
                 voucher.getId(),
                 stock,
-                beginTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
-                endTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
+                beginTime.atZone(orderTimeoutProperties.getZoneId()).toInstant().toEpochMilli(),
+                endTime.atZone(orderTimeoutProperties.getZoneId()).toInstant().toEpochMilli(),
                 now);
         String payloadJson;
         try {

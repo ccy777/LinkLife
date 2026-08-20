@@ -27,6 +27,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.TimeZone;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -139,6 +140,21 @@ class OutboxPollingServiceTest {
         @Override
         public Instant instant() {
             return instant;
+        }
+    }
+
+    @Test
+    void defaultOutboxClockUsesBusinessZoneNotJvmDefaultZone() {
+        TimeZone original = TimeZone.getDefault();
+        try {
+            ReflectionTestUtils.setField(service, "clock", null);
+            TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
+            LocalDateTime utcJvm = ReflectionTestUtils.invokeMethod(service, "now");
+            TimeZone.setDefault(TimeZone.getTimeZone("Asia/Shanghai"));
+            LocalDateTime shanghaiJvm = ReflectionTestUtils.invokeMethod(service, "now");
+            assertThat(utcJvm).isEqualTo(shanghaiJvm);
+        } finally {
+            TimeZone.setDefault(original);
         }
     }
 

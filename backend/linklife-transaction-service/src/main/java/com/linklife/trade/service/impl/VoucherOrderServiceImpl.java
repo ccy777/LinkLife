@@ -53,7 +53,8 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         switch (decision) {
             case ACCEPTED:
                 // 异步提交已受理：仅表示准入并入队，不表示 MySQL 已落库
-                return Result.ok(orderId);
+                // 18-digit snowflake id exceeds JS Number.MAX_SAFE_INTEGER; expose as JSON string
+                return Result.ok(Long.toString(orderId));
             case OUT_OF_STOCK:
                 return Result.fail("库存不足");
             case DUPLICATE_ORDER:

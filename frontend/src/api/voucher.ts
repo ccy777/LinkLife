@@ -6,9 +6,9 @@ export function fetchVouchers(shopId: number) {
 }
 
 export function seckill(voucherId: number) {
-  return request<number>({ method: 'post', url: `/voucher-order/seckill/${voucherId}` })
+  return request<string>({ method: 'post', url: `/voucher-order/seckill/${voucherId}` })
 }
 
-export function fetchSubmission(orderId: number) {
+export function fetchSubmission(orderId: string) {
   return request<OrderSubmission>({ method: 'get', url: `/voucher-order/submissions/${orderId}` })
 }

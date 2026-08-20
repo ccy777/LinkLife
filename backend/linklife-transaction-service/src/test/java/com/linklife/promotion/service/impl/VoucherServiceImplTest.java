@@ -16,6 +16,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.TimeZone;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -92,10 +93,43 @@ class VoucherServiceImplTest {
         assertThat(payload.voucherId()).isEqualTo(100L);
         assertThat(payload.initialStock()).isEqualTo(10);
         assertThat(payload.beginEpochMillis()).isEqualTo(
-                LocalDateTime.of(2026, 8, 1, 0, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
+                LocalDateTime.of(2026, 8, 1, 0, 0).atZone(ZoneId.of("Asia/Shanghai"))
+                        .toInstant().toEpochMilli());
         assertThat(payload.endEpochMillis()).isEqualTo(
-                LocalDateTime.of(2026, 8, 10, 0, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
+                LocalDateTime.of(2026, 8, 10, 0, 0).atZone(ZoneId.of("Asia/Shanghai"))
+                        .toInstant().toEpochMilli());
         assertThat(payload.createdAt()).isNotNull();
+    }
+
+    @Test
+    void payloadEpochsUseBusinessZoneRegardlessOfJvmDefaultZone() throws Exception {
+        TimeZone original = TimeZone.getDefault();
+        try {
+            TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
+            SeckillVoucherCreatedEventPayload utcPayload = createAndCapturePayload();
+
+            TimeZone.setDefault(TimeZone.getTimeZone("Asia/Shanghai"));
+            SeckillVoucherCreatedEventPayload shanghaiPayload = createAndCapturePayload();
+
+            assertThat(utcPayload.beginEpochMillis()).isEqualTo(shanghaiPayload.beginEpochMillis());
+            assertThat(utcPayload.endEpochMillis()).isEqualTo(shanghaiPayload.endEpochMillis());
+            assertThat(utcPayload.beginEpochMillis()).isEqualTo(
+                    LocalDateTime.of(2026, 8, 1, 0, 0).atZone(ZoneId.of("Asia/Shanghai"))
+                            .toInstant().toEpochMilli());
+            assertThat(utcPayload.endEpochMillis()).isEqualTo(
+                    LocalDateTime.of(2026, 8, 10, 0, 0).atZone(ZoneId.of("Asia/Shanghai"))
+                            .toInstant().toEpochMilli());
+        } finally {
+            TimeZone.setDefault(original);
+        }
+    }
+
+    private SeckillVoucherCreatedEventPayload createAndCapturePayload() throws Exception {
+        service.addSeckillVoucher(validVoucher());
+        ArgumentCaptor<OutboxPublishCommand> captor = ArgumentCaptor.forClass(OutboxPublishCommand.class);
+        verify(outboxPublisher).publish(captor.capture());
+        org.mockito.Mockito.clearInvocations(outboxPublisher);
+        return objectMapper.readValue(captor.getValue().payload(), SeckillVoucherCreatedEventPayload.class);
     }
 
     @Test

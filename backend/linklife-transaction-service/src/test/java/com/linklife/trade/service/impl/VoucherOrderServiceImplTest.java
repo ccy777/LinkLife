@@ -69,7 +69,17 @@ class VoucherOrderServiceImplTest {
         Result result = seckillAsUser(ACCEPTED);
 
         assertThat(result.getSuccess()).isTrue();
-        assertThat(result.getData()).isEqualTo(999L);
+        assertThat(result.getData()).isEqualTo("999");
+    }
+
+    @Test
+    void acceptedSnowflakeOrderIdIsExposedAsExactString() {
+        when(redisIdWorker.nextId("order")).thenReturn(628143678619123717L);
+
+        Result result = seckillAsUser(ACCEPTED);
+
+        assertThat(result.getSuccess()).isTrue();
+        assertThat(result.getData()).isEqualTo("628143678619123717");
     }
 
     @Test

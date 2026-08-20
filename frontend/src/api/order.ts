@@ -9,10 +9,10 @@ export function fetchMyOrders(current = 1, size = 10) {
   })
 }
 
-export function fetchOrder(orderId: number) {
+export function fetchOrder(orderId: string) {
   return request<Order>({ method: 'get', url: `/voucher-order/${orderId}` })
 }
 
-export function cancelOrder(orderId: number) {
-  return request<number>({ method: 'post', url: `/voucher-order/${orderId}/cancel` })
+export function cancelOrder(orderId: string) {
+  return request<string>({ method: 'post', url: `/voucher-order/${orderId}/cancel` })
 }
