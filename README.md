@@ -2,8 +2,6 @@
 
 > 面向高并发交易、缓存一致性与订单可靠性的本地生活微服务平台。
 
-**项目周期：2025.09—2025.12**
-
 **技术栈：** Java 17、Spring Boot 3.5、Spring Cloud Alibaba、Gateway、Nacos、OpenFeign、Sentinel、MySQL、Redis、Caffeine、RocketMQ 5.x、MyBatis-Plus、Docker、JMeter、Vue 3、TypeScript、Vite
 
 LinkLife 覆盖用户会话、商铺发现、GEO 附近商铺、优惠券秒杀、异步订单、动态内容、关注与点赞等本地生活场景。项目按用户、商户、交易、社交拆分业务服务，重点实现秒杀削峰、两级缓存、未支付订单可靠关闭、服务治理与故障恢复。
