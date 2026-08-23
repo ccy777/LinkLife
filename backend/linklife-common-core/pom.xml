@@ -10,7 +10,7 @@
     </parent>
     <artifactId>linklife-common-core</artifactId>
     <name>linklife-common-core</name>
-    <description>Cross-service stable core contracts (pure Java only)</description>
+    <description>跨服务公共契约与核心模型</description>
 
     <dependencies>
         <dependency>

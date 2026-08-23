@@ -3,13 +3,12 @@
     <div class="container">
       <header class="engineering__head">
         <h1>工程验证</h1>
-        <p class="engineering__note">经过本地环境验证的工程证据。</p>
-        <p class="engineering__note">本页展示本地双机工程验证结果（服务端与 JMeter 压测端分离），并非实时监控数据，不代表生产 SLA 或容量。</p>
+        <p class="engineering__note">{{ evidence.note }}</p>
       </header>
 
       <section class="engineering__stats">
         <StatCard :value="evidence.tests.count" label="自动化测试" />
-        <StatCard :value="evidence.officialBenchmarkRuns" label="正式双机 Benchmark runs" />
+        <StatCard :value="evidence.officialBenchmarkRuns" label="正式双机测试轮次" />
         <StatCard :value="evidence.independentDatabases" label="独立 MySQL 数据库" />
         <StatCard :value="evidence.springProcesses" label="Spring 服务进程" />
       </section>
@@ -30,7 +29,7 @@
       </section>
 
       <section class="engineering__section">
-        <h2 class="section-title">热点查询 Benchmark</h2>
+        <h2 class="section-title">热点查询性能</h2>
         <div class="engineering__flow">
           <div class="engineering__step">Caffeine L1</div>
           <span class="engineering__arrow" aria-hidden="true">→</span>

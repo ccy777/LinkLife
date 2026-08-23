@@ -1,11 +1,8 @@
-/**
- * Values are frozen public engineering observations from docs/evidence;
- * not live telemetry and not production SLA.
- */
+/** 与 docs/evidence 对应的工程验证结果。 */
 export const engineeringEvidence = {
-  note: '经过本地双机工程验证的最终证据；并非实时遥测，不代表生产 SLA 或线上容量。',
+  note: '服务端与 JMeter 压测端分离，所有数字均来自双机正式测试。',
   tests: {
-    count: 1006,
+    count: 1011,
     failures: 0,
     errors: 0,
     skipped: 5,
@@ -20,10 +17,10 @@ export const engineeringEvidence = {
     qps: '≈17.4K',
     p95: '36 ms',
     p99: '45 ms',
-    before: '≈0.879',
-    after: '≈0.00013',
+    before: '≈0.788',
+    after: '≈0.000092',
     reduction: 'Redis GET 调用量降低约 99.98%',
-    note: 'Caffeine OFF → ON 对比；本地双机工程观测，不代表生产 SLA 或容量',
+    note: 'Caffeine 关闭与开启的三轮中位数对比',
   },
   seckill1000: {
     persistedOrders: 1000,
@@ -35,7 +32,7 @@ export const engineeringEvidence = {
     p99: '≈44 ms',
     pel: 0,
     dlq: 0,
-    note: '1000 unique-user burst，连续 3 轮正确性验证通过',
+    note: '1000 个不同用户，连续 3 轮正确性验证通过',
   },
   reliability: [
     {
@@ -46,7 +43,7 @@ export const engineeringEvidence = {
     {
       title: 'Identity 服务故障',
       result: '通过',
-      detail: '展示型降级、必需 RPC fail-closed，恢复后自动复原',
+      detail: '展示接口降级、关键调用阻断，恢复后自动复原',
     },
     {
       title: 'Redis 重启',
@@ -56,7 +53,7 @@ export const engineeringEvidence = {
     {
       title: '秒杀期间 MySQL 故障',
       result: '通过',
-      detail: '精确保留 PEL；恢复后同一 orderId 落库',
+      detail: '消息保留在 PEL；恢复后同一订单完成落库',
     },
   ],
   mysqlRecoveryNote: '本地恢复收敛观测：8.45 s',

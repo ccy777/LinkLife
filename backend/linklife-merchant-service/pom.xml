@@ -10,7 +10,7 @@
     </parent>
     <artifactId>linklife-merchant-service</artifactId>
     <name>linklife-merchant-service</name>
-    <description>Stage 4 merchant service skeleton (no business migration in 018B)</description>
+    <description>商铺、两级缓存与 GEO 服务</description>
 
     <dependencies>
         <dependency>

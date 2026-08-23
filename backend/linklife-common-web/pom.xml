@@ -10,7 +10,7 @@
     </parent>
     <artifactId>linklife-common-web</artifactId>
     <name>linklife-common-web</name>
-    <description>Servlet/MVC shared web infrastructure for business services (Gateway must NOT depend on it)</description>
+    <description>业务服务共用的 MVC Web 基础能力</description>
 
     <dependencies>
         <dependency>

@@ -1,31 +1,26 @@
-# performance-test/stage6b — Fault Drills
+# Stage6B 故障演练
 
-## What this does
+`run_fault_drills.py` 针对本地微服务环境执行四组真实故障演练：
 
-`run_fault_drills.py` orchestrates four real failure drills against the
-8-container local stack:
-
-| drill | scenario |
+| 编号 | 场景 |
 |---|---|
-| A | Gateway Sentinel precise hotspot rate limiting |
-| B | Identity outage / circuit breaker / display vs required / recovery |
-| C | Redis kill/remove/recreate + AOF/volume persistence + reconnect |
-| D | MySQL-down accepted seckill → Pending retained → recovery persistence |
+| A | Gateway Sentinel 热点限流 |
+| B | Identity 中断、熔断、降级与恢复 |
+| C | Redis 容器重建、AOF 恢复与服务重连 |
+| D | MySQL 中断后，秒杀消息保留在 PEL 并恢复落库 |
 
-## Local output
+## 运行
 
-Drill evidence (environment, per-drill `evidence.json`, aggregate
-`summary.json`) is written under the gitignored local directory:
+```bat
+py performance-test\stage6b\run_fault_drills.py --help
+```
+
+## 结果位置
+
+每组演练的环境、`evidence.json` 和汇总结果写入：
 
 ```text
 .linklife-local/evidence/stage6b/
 ```
 
-The public repository freezes the drill results summary in
-`docs/reliability.md`; raw drill logs stay local and are not committed.
-
-## Integrity note
-
-Fault-drill correctness logic (admission semantics, exact Pending checks,
-recovery gates) is part of the project evidence and is not changed by the
-public cleanup.
+公开结果汇总见 [docs/reliability.md](../../docs/reliability.md)。

@@ -13,7 +13,7 @@
     <version>0.0.1-SNAPSHOT</version>
     <packaging>pom</packaging>
     <name>linklife-backend</name>
-    <description>LinkLife Stage 4 microservice foundation reactor</description>
+    <description>LinkLife 微服务后端聚合工程</description>
 
     <modules>
         <module>linklife-common-core</module>

@@ -10,7 +10,7 @@
     </parent>
     <artifactId>linklife-identity-service</artifactId>
     <name>linklife-identity-service</name>
-    <description>Stage 4 identity service skeleton (no business migration in 018B)</description>
+    <description>用户、验证码与登录会话服务</description>
 
     <dependencies>
         <dependency>

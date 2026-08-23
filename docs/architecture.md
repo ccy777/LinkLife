@@ -1,130 +1,132 @@
-# LinkLife Architecture
+# LinkLife 系统架构
 
-本文件描述仓库中真实存在的组件与拓扑，不包含未使用的组件。
-
-## 1. Runtime topology
+## 1. 运行拓扑
 
 ```mermaid
 flowchart TB
-    Client[Client] -->|GET/POST /api/**| GW[Gateway :8080]
-    GW -->|lb://| Identity[Identity :8081]
-    GW -->|lb://| Merchant[Merchant :8082]
-    GW -->|lb://| Transaction[Transaction :8083]
-    GW -->|lb://| Social[Social :8084]
-    Identity --> IDB[(linklife_identity)]
-    Merchant --> MDB[(linklife_merchant)]
-    Transaction --> TDB[(linklife_transaction)]
-    Social --> SDB[(linklife_social)]
+    Client[客户端] -->|/api/**| Gateway[Gateway :8080]
+    Gateway --> Identity[用户服务 :8081]
+    Gateway --> Merchant[商户服务 :8082]
+    Gateway --> Transaction[交易服务 :8083]
+    Gateway --> Social[社交服务 :8084]
+
+    Identity --> IdentityDB[(linklife_identity)]
+    Merchant --> MerchantDB[(linklife_merchant)]
+    Transaction --> TransactionDB[(linklife_transaction)]
+    Social --> SocialDB[(linklife_social)]
+
     Social -->|OpenFeign| Identity
-    Transaction -->|Lua + Stream| Redis[(Redis DB0 + ACL)]
-    Transaction -->|Local Outbox| OB[(Local Outbox)]
-    Transaction -->|timer message| RMQ[(RocketMQ 5.x)]
-    Merchant -->|Caffeine L1 + Redis L2| Redis
-    Gateway -->|Reactive Redis session| Redis
-    Identity -->|login code / token| Redis
-    Social -->|lock namespace| Redis
-    RMQ -->|timeout trigger| Transaction
-    subgraph Infra
-        Nacos[(Nacos 3.0.3)]
-        MySQL[(MySQL 8.4)]
-    end
-    Identity -.register.-> Nacos
-    Merchant -.register.-> Nacos
-    Transaction -.register.-> Nacos
-    Social -.register.-> Nacos
-    GW -.discover.-> Nacos
+    Merchant -->|Caffeine L1 + Redis L2| Redis[(Redis)]
+    Transaction -->|Lua + Stream| Redis
+    Transaction -->|Local Outbox| Outbox[(Outbox)]
+    Transaction -->|定时消息| RocketMQ[(RocketMQ 5.x)]
+    RocketMQ -->|超时触发| Transaction
+
+    Gateway -.服务发现.-> Nacos[(Nacos)]
+    Identity -.服务注册.-> Nacos
+    Merchant -.服务注册.-> Nacos
+    Transaction -.服务注册.-> Nacos
+    Social -.服务注册.-> Nacos
 ```
 
-业务服务仅通过 Gateway 对外暴露；基础组件 dev 端口绑定 127.0.0.1。
+Gateway 是统一外部入口，业务服务通过 Nacos 注册与发现。MySQL 按业务服务拆分数据库，Redis 通过 ACL 用户和命名空间隔离数据。
 
-## 2. Service boundaries
+## 2. 服务职责
 
-| Service | Responsibility |
+| 服务 | 主要职责 |
 |---|---|
-| Gateway | 唯一外部入口；Reactive Redis 会话认证（新 key 优先、legacy 兼容、损坏 fail-closed）；内部头清洗；路由转发；Sentinel 热点限流 |
-| Identity | 用户注册/登录/验证码、会话 token、用户摘要内部批量 API |
-| Merchant | 商铺/商铺类型；Caffeine L1 + Redis L2 二级缓存；Redis GEO 附近商铺索引（启动重建 + afterCommit 维护） |
-| Transaction | 优惠券/秒杀/订单；Redis Lua 原子准入、Stream 异步落库、本地 Outbox、RocketMQ 超时触发、Scheduler 兜底、统一关闭内核、补偿/DLQ |
-| Social | 博客/关注/点赞；MySQL 为事实源；Social→Identity 批量用户摘要 Feign（展示降级/正确性 fail-closed） |
+| Gateway | 会话认证、内部头清洗、路由转发、Sentinel 热点限流 |
+| Identity | 用户、验证码、登录会话与用户摘要批量接口 |
+| Merchant | 商铺、分类、文件上传、两级缓存与 GEO 附近商铺 |
+| Transaction | 优惠券、秒杀、异步订单、Outbox、超时关单与库存补偿 |
+| Social | 动态、关注、点赞，以及用户摘要批量查询 |
 
-## 3. Database ownership
+## 3. 数据库拆分
 
-- 4 个独立数据库：`linklife_identity`、`linklife_merchant`、`linklife_transaction`、`linklife_social`。
-- 每服务使用最小权限账号（仅本库 SELECT/INSERT/UPDATE/DELETE）。
-- 权威建表脚本位于各服务 `src/main/resources/db/schema.sql`（升级脚本在 `db/upgrade/`）。
-- 无跨库引用；promotion 与 trade 同库同进程（见 §9）。
+- `linklife_identity`：用户与会话相关持久化数据；
+- `linklife_merchant`：商铺、商铺分类与 GEO 数据源；
+- `linklife_transaction`：优惠券、秒杀库存、订单、Outbox 与状态日志；
+- `linklife_social`：动态、点赞与关注关系。
 
-## 4. Redis ownership
+每个服务使用独立账号访问本服务数据库。建表脚本位于各模块 `src/main/resources/db/schema.sql`，升级脚本位于 `db/upgrade/`。
 
-- 单实例 DB0 + per-service ACL user（`identity:*`、`merchant:*`、`transaction:*`、`social:*`），跨 namespace 返回 NOPERM。
-- Gateway 仅可读会话键（`identity:login:token:*`、legacy `login:token:*`）。
-- AOF everysec + named volume：容器重建后恢复 session/stream/PEL 状态。
-- 交易侧 key：`transaction:seckill:*`、`transaction:order:*`、`transaction:stream.orders`（+ DLQ/retry）。
-- 缓存侧 key：`merchant:cache:shop:{id}`、`merchant:cache:shop-type:list`、`merchant:shop:geo:{typeId}`。
+## 4. Redis 数据划分
 
-## 5. Transaction path
+| 命名空间 | 归属 |
+|---|---|
+| `identity:*` | 验证码、会话与签到 |
+| `merchant:*` | 商铺缓存、互斥锁与 GEO |
+| `transaction:*` | 秒杀库存、已下单用户、提交状态、Stream 与 DLQ |
+| `social:*` | 社交模块业务键与锁 |
+
+Redis 开启 AOF 并挂载数据卷；Gateway 只读取登录会话相关键。
+
+## 5. 秒杀交易链路
 
 ```text
 POST /api/voucher-order/seckill/{id}
-  → Gateway 会话认证 + Sentinel 限流
-  → Redis Lua：扣库存 → 一人一单（SADD）→ submission=ACCEPTED → XADD stream.orders
-  → OrderStreamConsumer（group g1）：
-      markProcessing → MySQL 事务落库（冻结 payment_due_at）→ markPersisted → ACK
-  → 失败重试 Pending → 终态分类（恢复 / 补偿 / DLQ）
+  → Gateway 认证与 Sentinel 限流
+  → Redis Lua：扣库存、一人一单、写入 Stream
+  → submission = ACCEPTED
+  → OrderStreamConsumer 消费
+  → MySQL 事务落库并冻结 payment_due_at
+  → submission = PERSISTED
+  → ACK
 ```
 
-订单状态（1-6）与提交状态机（ACCEPTED/PROCESSING/PERSISTED/FAILED）严格区分：MySQL 为最终事实源，Redis 为准入与提交状态。
+订单业务状态与异步提交状态分别维护：MySQL 保存最终订单事实，Redis 保存秒杀准入和提交进度。
 
-## 5a. Unpaid-order timeout path
+消费失败后，消费者从 PEL 恢复未确认消息，并结合重试计数、失败分类、DLQ 和幂等补偿完成收敛。
 
-`payment_due_at` 是订单创建事务内冻结的订单级绝对到期事实，RocketMQ 主动触发与 Scheduler 修复兜底共享同一事实、同一关闭内核：
+## 6. 超时关单链路
 
 ```text
 payment_due_at
-  ├─ Local Outbox → RocketMQ 5.x timer message → PushConsumer
-  └─ Scheduler（payment_due_at 扫描，repair / sweep fallback）
+  ├─ Local Outbox → RocketMQ 定时消息 → PushConsumer
+  └─ Scheduler 定时扫描
               ↓
-    OrderCloseTransactionService（MySQL 本地事务）
+    OrderCloseTransactionService
               ↓
-    UNPAID → CANCELED CAS + MySQL stock +1 + 状态日志 + ORDER_CLOSED Outbox
+    UNPAID → CANCELED MySQL 条件更新
               ↓
-    Redis 幂等库存补偿（ORDER_CLOSED Outbox Handler）
+    库存返还 + 状态日志 + ORDER_CLOSED Outbox
+              ↓
+    Redis Lua 幂等库存补偿
 ```
 
-- 订单创建与 timeout 发布意图在同一个 MySQL 本地事务提交，消除 DB/MQ 双写丢失窗口；
-- RocketMQ 投递为 at-least-once，重复消息与 MQ/Scheduler 竞争由 `UNPAID → CANCELED` CAS 吸收；
-- Broker 不可达时 Producer/Consumer 后台自动重试初始化，不阻断 Transaction 与 Scheduler；
-- RocketMQ 只属于 Transaction 未支付超时链路，**不是跨服务 Event Bus**。
+- 订单与超时消息发布意图在同一个 MySQL 本地事务内提交；
+- RocketMQ 主动触发到期订单，Scheduler 定时修复遗漏任务；
+- 两条路径共用关闭入口，由 MySQL 条件更新决定唯一成功者；
+- 重复消息不会重复关闭订单或重复返还库存。
 
-## 6. Cache path
+## 7. 缓存链路
 
-- Merchant 读多写少接口：Caffeine L1 → Redis L2（mutex 单飞回源）→ MySQL。
-- L1 miss 先记录 epoch，L2/DB 加载完成后再条件写回 L1（epoch 未变才允许）。
-- 写路径 afterCommit：先删 Redis L2，finally 中最终失效本地 L1；epoch fence 拒绝并发在途陈旧回填。
-- 多实例为 bounded staleness，不宣称分布式强一致。
-- 附近商铺查询读取 `merchant:shop:geo:{typeId}`；索引在 fresh startup 从 MySQL 重建，并在 create/update 事务提交后维护，回滚不产生 Redis side effect。
+Merchant 的热点读路径为：
 
-## 7. Service governance
+```text
+Caffeine L1 → Redis L2 → MySQL
+```
 
-- Gateway Sentinel：`/api/blog/hot`、`/api/shop/of/type`、`/api/voucher-order/seckill/**` 三类热点精确 QPS 限流，429 JSON。
-- Social→Identity：exception-ratio 熔断；展示型 RPC 降级为空 map（不伪造用户）；正确性型 RPC fail-closed。
-- 管理写接口（商铺/秒杀券）由 admin 身份守卫拦截。
+- Redis 空值缓存处理缓存穿透；
+- 互斥锁控制并发回源，锁释放使用 owner token + Lua；
+- 写事务提交后删除 Redis 缓存并失效本地缓存；
+- epoch fence 阻止写操作期间的旧查询回填 L1；
+- GEO 索引在服务启动时由 MySQL 重建，在商铺写事务提交后维护。
 
-## 8. Failure boundaries
+## 8. 服务治理
 
-- 事务提交后才执行缓存失效与 GEO 维护：回滚不产生 Redis side effect。
-- Redis 写失败仅记录错误，不伪装 DB 回滚；启动重建是 GEO/缓存的恢复机制。
-- Stream Pending 定时恢复 + 重试计数 + 终态分类 + DLQ 去重，保证“已投递未确认”消息最终一致。
-- MySQL 不可用时已准入订单保持 Pending，恢复后同一 orderId 落库。
+- Gateway Sentinel 对动态热点、分类商铺和秒杀接口执行热点限流；
+- Social → Identity 使用 OpenFeign 批量获取用户摘要；
+- 展示接口在 Identity 故障时返回基础内容，依赖用户真实性的接口直接返回服务不可用；
+- Gateway 清洗客户端传入的身份头，再注入可信用户信息；
+- 商铺和优惠券管理写接口通过管理员身份守卫校验。
 
-## 9. Why promotion + trade remain together
+## 9. 故障恢复
 
-优惠券创建与订单落库共享 `linklife_transaction` 库与同一进程事务（Outbox、补偿、超时关闭都在同一事务边界内）。拆分会引入跨服务/跨库事务或分布式事务中间件；当前量级用本地事务 + Outbox + Stream 更简单可靠。
+- Redis 重启后从 AOF 与数据卷恢复会话、Stream、Consumer Group 和 PEL；
+- MySQL 中断时，已经准入的秒杀消息保留在 PEL，数据库恢复后继续落库；
+- RocketMQ 发布失败时，Outbox 保留待发送记录并重试；
+- Consumer 或 Broker 恢复后继续处理已持久化的定时消息；
+- 缓存与 GEO 更新均在数据库事务提交后执行，避免回滚事务产生额外副作用。
 
-## 10. Explicit non-goals
-
-- 不使用 Kafka / Seata / Kubernetes / Prometheus / Grafana / SkyWalking。
-- RocketMQ 仅以 5.x 单节点开发/集成拓扑出现在 Transaction 超时链路，不是生产集群 HA，也不是跨服务总线。
-- 未做 Nacos 集群、MySQL 主从、Redis Cluster/Sentinel、网络分区演练。
-- 当前公开性能数字来自双机本地工程验证：服务端与 JMeter 压测端分离，通过 1 Gbps 有线网络直连；结果用于工程对比与正确性验证，不外推为生产 SLA 或容量。
-- 早期同机 Docker/JMeter 数据仅作为历史 baseline 保留，详见 docs/performance.md。
+完整演练结果见 [可靠性验证](reliability.md)。

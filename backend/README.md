@@ -1,163 +1,124 @@
-# LinkLife Backend Guide
+# LinkLife 后端开发指南
 
-## Modules
+## 模块说明
 
 ```text
-linklife-common-core       cross-service contracts, Result, user context, session key contract
-linklife-common-web        user-context filter, admin mutation guard, global exception handler
-linklife-gateway           reactive gateway: session auth, route forwarding, Sentinel hotspot rules
-linklife-identity-service  users, login verification codes, sessions, internal user-summary API
-linklife-merchant-service  shops, shop types, uploads, Caffeine L1 + Redis L2 cache, Redis GEO index
-linklife-transaction-service  vouchers, seckill admission, async order persistence, outbox,
-                              RocketMQ payment-timeout trigger, unified close kernel
-linklife-social-service    blogs, follows, likes, Social→Identity batch user summary (OpenFeign)
+linklife-common-core          跨服务公共契约、Result、用户上下文与会话键规范
+linklife-common-web           用户上下文过滤、管理员校验与全局异常处理
+linklife-gateway              会话认证、路由转发与 Sentinel 热点限流
+linklife-identity-service     用户、验证码、登录会话与用户摘要接口
+linklife-merchant-service     商铺、分类、文件上传、两级缓存与 GEO 索引
+linklife-transaction-service  优惠券、秒杀、异步订单、Outbox 与超时关单
+linklife-social-service       动态、关注、点赞及用户摘要批量查询
 ```
 
-## Order chain
-
-Seckill requests are admitted atomically in Redis, then persisted
-asynchronously in a MySQL local transaction:
+## 秒杀订单链路
 
 ```text
 POST /voucher-order/seckill/{id}
-  → Redis Lua admission (stock, one-user-one-order, XADD stream)
-  → submission state ACCEPTED
-  → OrderStreamConsumer (group + PEL)
-  → MySQL local transaction: stock -1 + INSERT UNPAID order
-    (payment_due_at frozen at order creation)
-  → submission state PERSISTED → ACK
+  → Redis Lua 原子准入（库存、一人一单、写入 Stream）
+  → submission = ACCEPTED
+  → OrderStreamConsumer 消费（Consumer Group + PEL）
+  → MySQL 本地事务：库存 -1 + 创建 UNPAID 订单 + 冻结 payment_due_at
+  → submission = PERSISTED
+  → ACK
 ```
 
-Successful admission does not mean the order has been persisted yet; the
-client polls the submission state (`ACCEPTED → PROCESSING → PERSISTED`).
+前端通过 `ACCEPTED → PROCESSING → PERSISTED` 区分 Redis 准入、消费处理和数据库持久化三个阶段。
 
-## Unpaid-order timeout close
+## 未支付订单关闭
 
-`payment_due_at` is the per-order absolute expiration fact frozen inside the
-order-creation transaction. The RocketMQ timer trigger and the Scheduler
-repair/sweep fallback share this single fact and the same close kernel:
+`payment_due_at` 在订单创建事务内写入，RocketMQ 定时消息与 Scheduler 定时修复共用同一个到期时间和关闭入口：
 
 ```text
                  payment_due_at
-                       |
-          +------------+------------+
-          |                         |
-          v                         v
-Local Outbox -> RocketMQ       Scheduler
-          |                         |
-          +------------+------------+
-                       |
-                       v
+                       │
+          ┌────────────┴────────────┐
+          ↓                         ↓
+Local Outbox → RocketMQ         Scheduler
+          └────────────┬────────────┘
+                       ↓
           OrderCloseTransactionService
-                       |
-                       v
-             UNPAID -> CANCELED CAS
-                       |
-             +---------+---------+
-             |                   |
-         MySQL stock          status log
-                                 |
-                         ORDER_CLOSED Outbox
-                                 |
-                         Redis idempotent
-                           compensation
+                       ↓
+             UNPAID → CANCELED CAS
+                       ↓
+       MySQL 库存返还 + ORDER_CLOSED Outbox
+                       ↓
+               Redis 幂等库存补偿
 ```
 
-- `payment_due_at` is set in the same MySQL transaction that inserts the
-  order; a later runtime change of `payment-timeout` cannot reinterpret
-  historical orders.
-- RocketMQ is the active timeout trigger; the Scheduler is a repair/sweep
-  fallback over the same fact.
-- Duplicate messages are absorbed by the `UNPAID → CANCELED` MySQL CAS.
-- `ORDER_CLOSED` is published through the local Outbox to drive idempotent
-  Redis stock compensation.
-- RocketMQ is a Transaction-internal timeout channel, not a cross-service
-  event bus.
+- 订单和超时发布意图在同一个 MySQL 事务内提交；
+- Broker 暂时不可用时，Outbox 保留待发送记录并继续重试；
+- 重复消息及 MQ/Scheduler 竞争由 MySQL 条件更新吸收；
+- `ORDER_CLOSED` 事件通过 Lua 幂等补偿 Redis 库存。
 
-## Startup
+## 启动后端
 
 ```bat
 mvn -f backend/pom.xml -DskipTests package
-copy backend\deploy\stage4.env.example .env   :: fill REQUIRED placeholders; .env is gitignored
+copy backend\deploy\stage4.env.example .env
 docker compose --env-file .env -f backend\deploy\docker-compose.stage4.yml up -d
 ```
 
-## Service ports
+## 服务端口
 
-| component | port |
+| 组件 | 端口 |
 |---|---:|
-| gateway | 8080 (only external entry) |
-| identity-service | 8081 (container-internal) |
-| merchant-service | 8082 (container-internal) |
-| transaction-service | 8083 (container-internal) |
-| social-service | 8084 (container-internal) |
-| mysql | 127.0.0.1:13306 |
-| redis | 127.0.0.1:16379 |
-| nacos | 127.0.0.1:18848 / 19848 |
+| Gateway | 8080 |
+| Identity | 8081（容器内部） |
+| Merchant | 8082（容器内部） |
+| Transaction | 8083（容器内部） |
+| Social | 8084（容器内部） |
+| MySQL | 127.0.0.1:13306 |
+| Redis | 127.0.0.1:16379 |
+| Nacos | 127.0.0.1:18848 / 19848 |
 
-## Database ownership
-
-Four independent databases, one per business service, each with a
-least-privilege account:
+## 数据库归属
 
 ```text
-linklife_identity     identity-service
-linklife_merchant     merchant-service
-linklife_transaction  transaction-service
-linklife_social       social-service
+linklife_identity     Identity
+linklife_merchant     Merchant
+linklife_transaction  Transaction
+linklife_social       Social
 ```
 
-Authoritative schema: each service's `src/main/resources/db/schema.sql`;
-upgrade scripts live in `db/upgrade/`.
+每个业务服务使用独立数据库与最小权限账号。建表脚本位于各服务的 `src/main/resources/db/schema.sql`，升级脚本位于 `db/upgrade/`。
 
-## Migrations
-
-Legacy monolith migration scripts are portable (POSIX `sh`) and stay in the
-source archive; invoke them explicitly when migrating an existing database:
+历史数据库迁移命令：
 
 ```sh
 sh backend/deploy/migration/migrate-stage3-mysql.sh
 sh backend/deploy/migration/migrate-stage3-redis.sh
 ```
 
-Existing databases that already have orders must run
-`002_add_voucher_order_payment_due_at.sql` to backfill `payment_due_at`
-before enabling the timeout feature. The default backfill is
-`create_time + 15 MINUTE`; an environment that historically used a custom
-timeout must backfill with that historical value instead.
+已有订单数据的环境在启用超时关单前，需要执行 `002_add_voucher_order_payment_due_at.sql` 补充 `payment_due_at`。
 
-## Redis namespace
+## Redis 命名空间
 
 ```text
-identity:*        identity-service (login code / session / sign)
-merchant:*        merchant-service (cache / lock / shop GEO)
-transaction:*     transaction-service (seckill / submission / stream / DLQ)
-social:*          social-service (lock namespace)
-identity:login:token:* / login:token:*   gateway session read/refresh
+identity:*        用户、验证码、会话与签到
+merchant:*        商铺缓存、互斥锁与 GEO
+transaction:*     秒杀、提交状态、Stream 与 DLQ
+social:*          社交模块锁与业务键
 ```
 
-Redis runs with per-service ACL users; a service cannot access another
-service's namespace (cross-namespace access returns NOPERM).
+Redis 使用按服务划分的 ACL 用户，Gateway 只读取会话相关键。
 
-## Key configuration
+## 关键配置
 
-- `LINKLIFE_PRODUCTION_VALIDATION_ENABLED` — fail-fast runtime validation.
-- `LINKLIFE_CONSOLE_VERIFICATION_CODE_ENABLED` — dev-only console code output.
-- `LINKLIFE_LOCAL_CACHE_*` — merchant Caffeine L1 settings (disable for A/B).
-- `LINKLIFE_SENTINEL_*` — gateway hotspot QPS and Social→Identity breaker.
-- `LINKLIFE_ORDER_TIMEOUT_ENABLED` / `LINKLIFE_OUTBOX_ENABLED` — transaction
-  reliability features (default off).
-- `LINKLIFE_ORDER_TIMEOUT_MQ_ENABLED` — RocketMQ timeout trigger (default
-  off; when enabled it requires endpoints/topic/tag/consumer-group and the
-  Outbox/Scheduler guards).
-- `LINKLIFE_ORDER_PAYMENT_TIMEOUT` — whole-second Duration in
-  `[1s, 24h]` (default `15m`); sub-second values fail startup.
-- `LINKLIFE_ADMIN_USER_IDS` — admin write guard allowlist.
+| 配置 | 作用 |
+|---|---|
+| `LINKLIFE_LOCAL_CACHE_*` | Caffeine L1 缓存及 A/B 测试开关 |
+| `LINKLIFE_SENTINEL_*` | Gateway 热点限流与服务熔断参数 |
+| `LINKLIFE_ORDER_TIMEOUT_ENABLED` | 未支付订单超时处理 |
+| `LINKLIFE_OUTBOX_ENABLED` | 本地消息表投递 |
+| `LINKLIFE_ORDER_TIMEOUT_MQ_ENABLED` | RocketMQ 定时消息触发 |
+| `LINKLIFE_ORDER_PAYMENT_TIMEOUT` | 订单支付期限，默认 `15m` |
+| `LINKLIFE_ADMIN_USER_IDS` | 管理写接口用户白名单 |
 
-## RocketMQ (optional, default off)
+## RocketMQ 超时触发
 
-The RocketMQ payment-timeout feature is safely disabled by default. Enabling
-it requires a RocketMQ 5.x endpoint with timer-message support, plus:
+启用时配置 RocketMQ 5.x Proxy 地址、Topic、Tag 与消费组：
 
 ```text
 linklife.trade.order-timeout.rocketmq.enabled=true
@@ -167,18 +128,13 @@ linklife.trade.order-timeout.rocketmq.tag=PAYMENT_TIMEOUT_CHECK
 linklife.trade.order-timeout.rocketmq.consumer-group=<group>
 ```
 
-`linklife.trade.order-timeout.payment-timeout` must be a whole-second
-Duration between `1s` and `24h`. The isolated single-node integration
-topology lives in `backend/deploy/rocketmq-timeout-it/` (loopback ports,
-test-only empty credentials, integration runner behind a manual profile).
-It is not a production HA cluster.
+本地集成环境位于 `backend/deploy/rocketmq-timeout-it/`。
 
-## Test commands
+## 测试命令
 
 ```bat
 mvn -f backend/pom.xml clean test
 mvn -f backend/pom.xml -DskipTests package
 ```
 
-Final frozen reactor: 1006 tests, 0 failures, 0 errors, 5 skipped
-(the 5 skipped are pre-existing environment-dependent upload tests).
+当前全量回归结果：1011 项测试，0 Failure，0 Error，5 项跳过。

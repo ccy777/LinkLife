@@ -7,7 +7,7 @@
     fill="none"
     xmlns="http://www.w3.org/2000/svg"
     role="img"
-    aria-label="LinkLife logo"
+    aria-label="LinkLife 标志"
   >
     <rect x="2" y="2" width="36" height="36" rx="12" fill="url(#ll-logo-bg)" />
     <circle cx="14" cy="20" r="5.5" fill="#6C63FF" />

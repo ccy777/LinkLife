@@ -10,7 +10,7 @@
     </parent>
     <artifactId>linklife-gateway</artifactId>
     <name>linklife-gateway</name>
-    <description>Stage 4 WebFlux Gateway (single external entry, Nacos discovery consumer only)</description>
+    <description>统一外部入口、会话认证与服务路由</description>
 
     <dependencies>
         <dependency>

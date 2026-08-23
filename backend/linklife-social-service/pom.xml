@@ -10,7 +10,7 @@
     </parent>
     <artifactId>linklife-social-service</artifactId>
     <name>linklife-social-service</name>
-    <description>Stage 4 social service skeleton (OpenFeign stack smoke in 018B)</description>
+    <description>动态、关注与点赞服务</description>
 
     <dependencies>
         <dependency>

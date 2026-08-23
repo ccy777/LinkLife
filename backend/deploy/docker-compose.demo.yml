@@ -1,10 +1,8 @@
-# Explicit opt-in overlay for the short, local README demo flow.
-# Usage (PowerShell):
+# README 本地演示环境。
+# PowerShell 启动命令：
 #   docker compose --env-file .env -f backend/deploy/docker-compose.stage4.yml -f backend/deploy/docker-compose.demo.yml up -d --build
 #
-# The base Stage4 Compose file remains the default runtime. This overlay only
-# changes host exposure and Transaction runtime variables when it is explicitly
-# supplied on the command line.
+# 此文件作为 Stage4 编排的覆盖层，增加本机端口映射、RocketMQ 和交易服务演示参数。
 services:
   gateway:
     ports: !override
@@ -12,17 +10,16 @@ services:
 
   transaction-service:
     environment:
-      # Freeze a short per-order due time for the local demo only.
+      # 将本地演示订单的支付时限设为 45 秒。
       LINKLIFE_ORDER_PAYMENT_TIMEOUT: "45s"
-      # Exercise the existing Local Outbox -> RocketMQ timeout trigger.
+      # 启用 Local Outbox → RocketMQ 超时触发链路。
       LINKLIFE_ORDER_TIMEOUT_MQ_ENABLED: "true"
       LINKLIFE_ROCKETMQ_ENDPOINTS: "broker:8081"
       LINKLIFE_ORDER_TIMEOUT_MQ_TOPIC: "linklife-order-payment-timeout-demo"
       LINKLIFE_ORDER_TIMEOUT_MQ_TAG: "PAYMENT_TIMEOUT_CHECK"
       LINKLIFE_ORDER_TIMEOUT_MQ_CONSUMER_GROUP: "linklife-transaction-order-timeout-demo-v1"
       LINKLIFE_ORDER_TIMEOUT_MQ_SSL_ENABLED: "false"
-      # Publish timeout intents promptly. Keep the repair scheduler enabled,
-      # but postpone its first sweep so a healthy demo uses the MQ main path.
+      # 及时发布超时任务，并延后 Scheduler 首次扫描，以便观察 RocketMQ 主链路。
       LINKLIFE_OUTBOX_INITIAL_DELAY_MS: "0"
       LINKLIFE_OUTBOX_SCAN_DELAY_MS: "1000"
       LINKLIFE_ORDER_TIMEOUT_INITIAL_DELAY_MS: "120000"
@@ -114,8 +111,7 @@ services:
       - linklife-stage4-net
 
 volumes:
-  # Do not reuse a developer's Stage4 volumes: their local credentials and
-  # order data may predate this opt-in demo invocation.
+  # Demo 使用独立数据卷，与日常 Stage4 开发数据隔离。
   mysql_data:
     name: linklife_demo_mysql_data
   redis_data:

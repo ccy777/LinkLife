@@ -52,7 +52,7 @@ linklife:
   trade:
     order-timeout:
       enabled: ${LINKLIFE_ORDER_TIMEOUT_ENABLED:false}
-      # Frozen contract: whole-second Duration in [1s, 24h]; sub-second values fail startup.
+      # 支付时限使用 1 秒至 24 小时的整秒 Duration。
       payment-timeout: ${LINKLIFE_ORDER_PAYMENT_TIMEOUT:${LINKLIFE_ORDER_TIMEOUT_MINUTES:15}m}
       zone-id: ${LINKLIFE_ORDER_TIMEOUT_ZONE_ID:Asia/Shanghai}
       scan-delay-ms: ${LINKLIFE_ORDER_TIMEOUT_SCAN_DELAY_MS:60000}

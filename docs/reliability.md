@@ -1,99 +1,95 @@
-# LinkLife Reliability Verification
+# LinkLife 可靠性验证
 
-多类真实故障演练基于本地验证拓扑执行，验证结果如下。演练脚本与复现方式见
-`docs/runbook.md` 与 `performance-test/stage6b/run_fault_drills.py`。
+项目围绕限流、服务中断、缓存恢复、数据库故障和消息链路执行真实演练。Stage6B 脚本负责 Gateway、Identity、Redis 与 MySQL 场景；RocketMQ 场景通过本地集成环境执行。
 
-## Drill A — Gateway hotspot rate limiting
+## 验证结果
 
-| item | detail |
-|---|---|
-| Failure injected | 对 `/api/blog/hot`、`/api/shop/of/type`、`/api/voucher-order/seckill/{id}` 发送热点短 burst |
-| Expected invariant | 热点接口精确 429；非热点接口不受影响；429 不产生订单副作用 |
-| Observed | 每个热点 API 26/30 次 429，0 个 5xx；非热点请求无 429/5xx；26 个 429 未生成任何订单/submission |
-| Recovery | 无需恢复（限流为主动治理） |
-
-## Drill B — Identity outage / circuit breaker
-
-| item | detail |
-|---|---|
-| Failure injected | 停止 Identity 服务，触发 Social→Identity 熔断（exception-ratio 0.5 / min 5 / window 5s） |
-| Expected invariant | 展示型 RPC 降级（不伪造用户）；正确性型 RPC fail-closed；恢复后自动复原 |
-| Observed | blog/hot 保持 200 且 name/icon 为空（不伪造用户）；required RPC 返回固定“服务暂不可用”文案；Identity 重启并通过熔断窗口后 name/icon 与 required RPC 恢复 |
-| Recovery | Identity 重启 + Nacos 健康 + 熔断窗口过后自动恢复（本地记录 recovery 约 15.73 s） |
-
-## Drill C — Redis restart / AOF persistence
-
-| item | detail |
-|---|---|
-| Failure injected | `docker compose kill redis` → `rm` → 重建容器（保留 named volume，未 `down -v`） |
-| Expected invariant | AOF + volume 恢复 session / stream / group / PEL 与代表 key 及 TTL；ACL namespace 隔离保持 |
-| Observed | 同一 Stream message ID 在重启前/后均在 PEL（exact pending，delivery_count=1）；stream XLEN 与 group 保留；跨 namespace 读取返回 NOPERM；功能探测（/user/me、/shop/1、submission、/blog/like）恢复 |
-| Recovery | redis 就绪后服务自动重连（本地记录约 20.67 s） |
-
-## Drill D — MySQL outage during seckill
-
-| item | detail |
-|---|---|
-| Failure injected | 仅停止 MySQL；执行一次已准入秒杀下单 |
-| Expected invariant | Redis 已准入但 MySQL 不可用时：消息进入 PEL（不误 ACK、不补偿、不写 DLQ）；恢复后同一 orderId 落库，PEL 条目消失 |
-| Observed | pending_baseline=0；exact Stream message id 进入 PEL（consumer=c1，delivery_count=1）；期间 submission 保持 ACCEPTED、DLQ 不增；恢复后同一 orderId 落库（orders=1、distinct=1、duplicate=0），submission=PERSISTED，同一 exact PEL 条目消失 |
-| Recovery | 本地演练记录收敛约 8.45 s（≤60s gate） |
-
-## Drill E — RocketMQ Broker publish outage
-
-| item | detail |
-|---|---|
-| Failure injected | Broker 不可达时发布 timeout 消息 |
-| Expected invariant | Outbox 保持 PENDING、retry_count 增加、不写假 SUCCESS；Broker 恢复后自动发送并关单 |
-| Observed | 发布失败不假成功；恢复后 publish → 定时消费 → 关单 → Redis 补偿收敛：PASS |
-| Recovery | Broker 恢复后由既有 Outbox 重试驱动 |
-
-## Drill F — RocketMQ Consumer outage at dueAt
-
-| item | detail |
-|---|---|
-| Failure injected | Consumer 在 dueAt 时点停机 |
-| Expected invariant | 订单保持 UNPAID；恢复后的消费者处理持久化定时消息并产生一次关闭 |
-| Observed | 停机期间订单未关闭；replacement consumer 消费后收敛：PASS |
-| Recovery | 消费者重建后自动恢复 |
-
-## Drill G — NameServer + Broker restart
-
-| item | detail |
-|---|---|
-| Failure injected | 已入 Broker 的定时消息在 NameServer + Broker 重启 |
-| Expected invariant | 定时消息从持久化 store 恢复并消费 |
-| Observed | 重启后消息被消费并完成关闭：PASS（single-node boundary only） |
-| Recovery | 组件重启后自动恢复 |
-
-## Drill H — Broker unavailable at Transaction cold start
-
-| item | detail |
-|---|---|
-| Failure injected | Broker 在应用启动前已 down，再启动 Transaction |
-| Expected invariant | Spring Context 可用；Scheduler 可基于 payment_due_at 关单并回补 MySQL 库存；Broker 恢复后同一进程 Producer/Consumer 自动就绪 |
-| Observed | Context/Scheduler 正常；Broker 恢复后 Producer ready ≈ 16.34 s、Consumer ready ≈ 16.42 s（本地观测） |
-| Recovery | 后台初始化器自动重试 |
-
-## RocketMQ duplicate / race verification
-
-- 3 条物理重复 timeout 消息：只有 1 次 `UNPAID → CANCELED` CAS 成功，1 次库存返还、1 条状态日志、1 条 ORDER_CLOSED Outbox；
-- MQ 与 Scheduler 对同一订单同时触发：只有 1 个 CAS 胜者；
-- 本地单节点观测 `consumeAt - dueAt ≈ 199.378 ms`。
-
-以上均为本地单节点开发观测，不代表生产 RocketMQ 集群 HA、SLA 或吞吐保证。
-
-## Summary
-
-| Scenario | Expected behavior | Evidence |
+| 场景 | 验证内容 | 结果 |
 |---|---|---|
-| Gateway hotspot limit | 精确 429，无订单副作用 | PASS |
-| Identity outage | 展示降级、required fail-closed、恢复验证 | PASS |
-| Redis restart | AOF 恢复 session/stream/PEL | PASS |
-| MySQL outage during seckill | exact PEL → 恢复后同一 orderId 落库 | PASS |
-| Broker publish outage | Outbox 重试收敛、不假成功 | PASS |
-| Consumer outage at dueAt | 订单保持 UNPAID，恢复后收敛 | PASS |
-| NameServer + Broker restart | 定时消息从持久化 store 恢复 | PASS |
-| Broker-down cold start | Context/Scheduler 可用，同进程客户端自动恢复 | PASS |
+| Gateway 热点过载 | 热点接口返回 429，非热点请求正常，限流请求不产生订单 | 通过 |
+| Identity 服务中断 | 展示接口降级、关键接口阻断，服务恢复后调用自动恢复 | 通过 |
+| Redis 重启 | AOF 恢复会话、Stream、Consumer Group 与 PEL | 通过 |
+| 秒杀期间 MySQL 中断 | 已准入消息保留在 PEL，数据库恢复后继续落库 | 通过 |
+| RocketMQ 发布中断 | Outbox 保留待发送任务，Broker 恢复后完成投递与关单 | 通过 |
+| RocketMQ Consumer 停机 | 订单保持未支付，Consumer 恢复后处理定时消息 | 通过 |
+| NameServer 与 Broker 重启 | 已持久化定时消息恢复后继续消费 | 通过 |
+| Broker 冷启动不可用 | Transaction 与 Scheduler 正常启动，Broker 恢复后客户端自动连接 | 通过 |
 
-所有“恢复时间/收敛时间”均为本地演练观测值，不代表 SLA。
+## Gateway 热点限流
+
+对动态热点、分类商铺和秒杀接口发送短时突发请求：
+
+- 每个热点接口 30 次请求中出现 26 次 429；
+- 0 个 5xx；
+- 非热点接口保持正常；
+- 被限流的秒杀请求没有生成订单或提交记录。
+
+## Identity 中断与恢复
+
+停止 Identity 后触发 Social → Identity 熔断：
+
+- 动态列表继续返回基础内容，用户名称和头像留空；
+- 依赖真实用户信息的接口返回“服务暂不可用”；
+- Identity 恢复并经过熔断窗口后，用户信息和关键调用自动恢复；
+- 本地恢复观测约 15.73 秒。
+
+## Redis 重启恢复
+
+Redis 容器重建时保留 AOF 数据卷，恢复后核对：
+
+- 登录会话与代表性业务键；
+- Stream 长度与 Consumer Group；
+- 重启前后的同一条 PEL 消息；
+- Redis ACL 命名空间隔离；
+- 用户、商铺、提交状态和点赞接口。
+
+服务自动重新连接 Redis，本地恢复观测约 20.67 秒。
+
+## 秒杀期间 MySQL 中断
+
+MySQL 停止后发起一次秒杀请求，Redis 完成准入，但消费者无法持久化订单：
+
+```text
+Redis 准入成功
+  ↓
+消息进入 PEL，不提前 ACK
+  ↓
+MySQL 恢复
+  ↓
+同一 orderId 完成落库
+  ↓
+提交状态变为 PERSISTED，PEL 清空
+```
+
+整个过程中没有重复订单、错误补偿或 DLQ 增量，本地收敛观测约 8.45 秒。
+
+## RocketMQ 消息链路
+
+### 发布中断
+
+Broker 不可达时，Outbox 保持待发送状态并增加重试次数。Broker 恢复后，消息完成发布、定时消费、订单关闭和 Redis 库存补偿。
+
+### Consumer 停机
+
+Consumer 在订单到期时停机，订单保持 `UNPAID`；Consumer 恢复后继续消费 Broker 中的定时消息并完成关单。
+
+### Broker 与 NameServer 重启
+
+在定时消息写入 Broker 后重启 NameServer 与 Broker，消息从持久化存储恢复，并在到期后完成消费。
+
+### 冷启动恢复
+
+Broker 未启动时先启动 Transaction：Spring Context 与 Scheduler 正常工作；Broker 恢复后，同一进程中的 Producer 和 Consumer 自动连接。
+
+## 重复消息与并发竞争
+
+- 连续投递 3 条相同超时消息，只有一次 `UNPAID → CANCELED` 条件更新成功；
+- 库存仅返还一次，状态日志和 `ORDER_CLOSED` Outbox 各产生一条；
+- RocketMQ 与 Scheduler 同时关闭同一订单时，同样只有一个成功者；
+- 定时消息本地到期偏差观测约 199 ms。
+
+## 复现入口
+
+- [运行与演示指南](runbook.md)
+- [Stage6B 故障演练脚本](../performance-test/stage6b/run_fault_drills.py)
+- [RocketMQ 本地集成环境](../backend/deploy/rocketmq-timeout-it)

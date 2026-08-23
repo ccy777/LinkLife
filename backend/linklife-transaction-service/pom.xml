@@ -10,7 +10,7 @@
     </parent>
     <artifactId>linklife-transaction-service</artifactId>
     <name>linklife-transaction-service</name>
-    <description>Stage 4 transaction service skeleton (promotion+trade, no business migration in 018B)</description>
+    <description>优惠券、秒杀、订单与可靠消息服务</description>
 
     <dependencies>
         <dependency>

@@ -2,7 +2,7 @@
   <div class="app-shell">
     <header class="app-header">
       <div class="container app-header__inner">
-        <RouterLink class="app-header__brand" to="/" aria-label="LinkLife home">
+        <RouterLink class="app-header__brand" to="/" aria-label="LinkLife 首页">
           <LogoMark />
           <span class="app-header__name">LinkLife</span>
         </RouterLink>
@@ -18,7 +18,7 @@
             <el-dropdown trigger="click">
               <button class="app-user" type="button" aria-label="账户菜单">
                 <UserAvatar :icon="auth.currentUser?.icon" :nickname="auth.currentUser?.nickName || 'U'" />
-                <span class="app-user__name">{{ auth.currentUser?.nickName || 'Me' }}</span>
+                <span class="app-user__name">{{ auth.currentUser?.nickName || '我的' }}</span>
                 <el-icon><ArrowDown /></el-icon>
               </button>
               <template #dropdown>
